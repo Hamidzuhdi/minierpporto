@@ -1,0 +1,10 @@
+{
+    "POST": {
+        "action": "create",
+        "supplier": "",
+        "tanggal": "2026-02-02",
+        "items": "[{\"sparepart_id\":1,\"qty\":1,\"harga_beli\":500000},{\"sparepart_id\":2,\"qty\":1,\"harga_beli\":180000},{\"sparepart_id\":3,\"qty\":1,\"harga_beli\":50000},{\"sparepart_id\":4,\"qty\":1,\"harga_beli\":60000}]"
+    },
+    "items_json": "[{\"sparepart_id\":1,\"qty\":1,\"harga_beli\":500000},{\"sparepart_id\":2,\"qty\":1,\"harga_beli\":180000},{\"sparepart_id\":3,\"qty\":1,\"harga_beli\":50000},{\"sparepart_id\":4,\"qty\":1,\"harga_beli\":60000}]",
+    "items_json_length": 187
+}
