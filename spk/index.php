@@ -703,7 +703,6 @@ function displaySPKs(spks) {
                                 ${!isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dikirim ke Owner')">Dikirim ke Owner</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Buat Invoice')">Buat Invoice</a></li>` : ''}
                                 ${isOwner ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Cetak Invoice')">Sudah Cetak Invoice</a></li>` : ''}
-                                ${['Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU'].includes(spk.status_spk) ? `<li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah Reminder WA')">Sudah Reminder WA</a></li><li><a class="dropdown-item" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Sudah FU')">Sudah FU</a></li>` : ''}
                                 ${!['Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU'].includes(spk.status_spk) ? `<li><hr class="dropdown-divider"></li><li><a class="dropdown-item text-danger" href="javascript:void(0);" onclick="updateStatus(${spk.id}, 'Dibatalkan')">Dibatalkan</a></li>` : ''}
                             </ul>
                         </div>

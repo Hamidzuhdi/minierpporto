@@ -11,7 +11,8 @@ if (!isset($_SESSION['user_id'])) {
 $page_title = "Manajemen Customer";
 include '../header.php';
 
-$reminder_from_query = (($_GET['reminder'] ?? '') === '1' || ($_GET['reminder'] ?? '') === '2months') ? '1' : ($_GET['reminder'] ?? '0');
+$reminder_param = (string)($_GET['reminder'] ?? '');
+$reminder_from_query = ($reminder_param === '2months') ? '1' : (in_array($reminder_param, ['7days', '1', '6months'], true) ? $reminder_param : '0');
 ?>
 
 <div class="container-fluid py-4">
@@ -48,12 +49,13 @@ $reminder_from_query = (($_GET['reminder'] ?? '') === '1' || ($_GET['reminder'] 
                                     <th>Alamat</th>
                                     <th>Kendaraan</th>
                                     <th>Status Piutang</th>
+                                    <th>Follow-up</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="customerTableBody">
                                 <tr>
-                                    <td colspan="7" class="text-center">Loading...</td>
+                                    <td colspan="8" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -209,17 +211,79 @@ $reminder_from_query = (($_GET['reminder'] ?? '') === '1' || ($_GET['reminder'] 
     </div>
 </div>
 
+<!-- Modal Catat Follow-up -->
+<div class="modal fade" id="followupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-phone"></i> Catat Follow-up</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="followupForm">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="add_followup">
+                    <input type="hidden" id="followup_customer_id" name="customer_id">
+                    <input type="hidden" id="followup_tahap" name="tahap">
+
+                    <div class="mb-3">
+                        <div class="fw-bold" id="followupCustomerInfo"></div>
+                        <small class="text-muted" id="followupTahapInfo"></small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Hasil Follow-up *</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="hasil" id="hasil_tidak_jawab" value="tidak_jawab" required>
+                            <label class="form-check-label" for="hasil_tidak_jawab">Tidak jawab</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="hasil" id="hasil_jawab" value="jawab">
+                            <label class="form-check-label" for="hasil_jawab">Jawab</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="hasil" id="hasil_jawab_lanjut" value="jawab_lanjut">
+                            <label class="form-check-label" for="hasil_jawab_lanjut">Jawab dan lanjut</label>
+                        </div>
+                        <small class="text-muted">"Tidak jawab" tetap muncul di daftar reminder; "Jawab" dan "Jawab dan lanjut" mengeluarkan customer dari tahap ini.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="followup_note" class="form-label">Catatan</label>
+                        <textarea class="form-control" id="followup_note" name="note" rows="2" placeholder="Opsional"></textarea>
+                    </div>
+
+                    <h6 class="border-bottom pb-2 mb-2">Riwayat Follow-up</h6>
+                    <div id="followupHistory" class="small">Memuat...</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <?php include '../footer.php'; ?>
 
 <script>
 const reminderFromQuery = '<?php echo $reminder_from_query; ?>';
+// Nilai filter reminder -> tahap follow-up di backend
+const FOLLOWUP_TAHAP_BY_FILTER = {'7days': '7days', '1': '2months', '6months': '6months'};
+const FOLLOWUP_TAHAP_LABEL = {'7days': '7 Hari', '2months': '2 Bulan', '6months': '6 Bulan'};
+const FOLLOWUP_HASIL_BADGE = {
+    tidak_jawab: ['warning text-dark', 'Tidak jawab'],
+    jawab: ['info', 'Jawab'],
+    jawab_lanjut: ['success', 'Jawab dan lanjut']
+};
+let customerRows = {};
 let currentDetailCustomerId = null;
 let reopenDetailAfterVehicleSave = false;
 
 // Load data saat halaman dimuat
 $(document).ready(function() {
-    if (reminderFromQuery === '1') {
-        $('#reminderFilter').val('1');
+    if (FOLLOWUP_TAHAP_BY_FILTER[reminderFromQuery]) {
+        $('#reminderFilter').val(reminderFromQuery);
     }
 
     loadCustomers();
@@ -263,11 +327,28 @@ function loadCustomers() {
 // Tampilkan data customer di tabel
 function displayCustomers(customers) {
     let html = '';
-    
+    const followupTahap = FOLLOWUP_TAHAP_BY_FILTER[$('#reminderFilter').val()] || null;
+    customerRows = {};
+
     if (customers.length === 0) {
-        html = '<tr><td colspan="7" class="text-center">Belum ada data customer</td></tr>';
+        html = '<tr><td colspan="8" class="text-center">Belum ada data customer</td></tr>';
     } else {
         customers.forEach(function(customer) {
+            customerRows[customer.id] = customer;
+
+            // Kolom follow-up hanya bermakna saat filter reminder aktif
+            let followupCell = '-';
+            if (followupTahap) {
+                const attempts = parseInt(customer.fu_attempts) || 0;
+                const followupStatus = attempts > 0
+                    ? `<span class="badge bg-warning text-dark">Tidak jawab ${attempts}x</span><br><small class="text-muted">terakhir ${formatDate(customer.fu_last_at)}</small>`
+                    : '<span class="badge bg-light text-dark border">Belum di-follow-up</span>';
+                followupCell = `${followupStatus}<br>
+                    <button class="btn btn-success btn-sm mt-1" onclick="openFollowupModal(${customer.id})" title="Catat hasil follow-up">
+                        <i class="fas fa-phone"></i> Catat
+                    </button>`;
+            }
+
             let vehicleInfo = '-';
             if (customer.vehicles && customer.vehicles.length > 0) {
                 vehicleInfo = customer.vehicles.map(v => `<div class="mb-1"><span class="badge bg-primary">${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</span></div>`).join('');
@@ -286,6 +367,7 @@ function displayCustomers(customers) {
                     <td>${customer.address ? (customer.address.length > 50 ? customer.address.substring(0, 50) + '...' : customer.address) : '-'}</td>
                     <td>${vehicleInfo}</td>
                     <td>${piutangInfo}</td>
+                    <td>${followupCell}</td>
                     <td>
                         <button class="btn btn-info btn-sm" onclick="viewCustomerDetail(${customer.id})" title="Detail & Kendaraan">
                             <i class="fas fa-eye"></i>
@@ -304,6 +386,81 @@ function displayCustomers(customers) {
     
     $('#customerTableBody').html(html);
 }
+
+function escapeHtml(text) {
+    return $('<div>').text(text == null ? '' : String(text)).html();
+}
+
+// Buka modal catat follow-up untuk satu customer pada tahap filter reminder yang sedang aktif
+function openFollowupModal(customerId) {
+    const customer = customerRows[customerId];
+    const tahap = FOLLOWUP_TAHAP_BY_FILTER[$('#reminderFilter').val()];
+    if (!customer || !tahap) {
+        return;
+    }
+
+    $('#followupForm')[0].reset();
+    $('#followup_customer_id').val(customerId);
+    $('#followup_tahap').val(tahap);
+    $('#followupCustomerInfo').text(customer.name + (customer.phone ? ' - ' + customer.phone : ''));
+    $('#followupTahapInfo').text('Reminder tahap ' + FOLLOWUP_TAHAP_LABEL[tahap] + ' - SPK terakhir: ' + formatDate(customer.last_spk_at));
+    $('#followupHistory').text('Memuat...');
+    $('#followupModal').modal('show');
+
+    $.ajax({
+        url: 'backend.php?action=get_followups&customer_id=' + customerId,
+        type: 'GET',
+        dataType: 'json',
+        success: function(response) {
+            if (!response.success || response.data.length === 0) {
+                $('#followupHistory').html('<span class="text-muted">Belum ada riwayat follow-up.</span>');
+                return;
+            }
+
+            let rows = response.data.map(function(f) {
+                const badge = FOLLOWUP_HASIL_BADGE[f.hasil] || ['secondary', f.hasil];
+                return `<tr>
+                    <td>${formatDateTime(f.created_at)}</td>
+                    <td>${FOLLOWUP_TAHAP_LABEL[f.tahap] || f.tahap}</td>
+                    <td><span class="badge bg-${badge[0]}">${badge[1]}</span></td>
+                    <td>${escapeHtml(f.note) || '-'}</td>
+                    <td>${escapeHtml(f.created_by_name) || '-'}</td>
+                </tr>`;
+            }).join('');
+            $('#followupHistory').html(`
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Waktu</th><th>Tahap</th><th>Hasil</th><th>Catatan</th><th>Oleh</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>`);
+        },
+        error: function() {
+            $('#followupHistory').html('<span class="text-danger">Gagal memuat riwayat.</span>');
+        }
+    });
+}
+
+$('#followupForm').on('submit', function(e) {
+    e.preventDefault();
+
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: $(this).serialize(),
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#followupModal').modal('hide');
+                loadCustomers();
+            } else {
+                showAlert('danger', response.message);
+            }
+        },
+        error: function() {
+            showAlert('danger', 'Terjadi kesalahan saat menyimpan follow-up');
+        }
+    });
+});
 
 // Buka modal untuk tambah customer
 function openAddModal() {

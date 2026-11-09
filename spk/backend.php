@@ -718,7 +718,7 @@ elseif ($action === 'update_status') {
     $status = $_POST['status'];
     
     // Validasi status
-    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU', 'Dibatalkan'];
+    $valid_statuses = ['Menunggu Konfirmasi', 'Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice', 'Dibatalkan'];
     if (!in_array($status, $valid_statuses)) {
         echo json_encode(['success' => false, 'message' => 'Status tidak valid']);
         exit;
@@ -733,15 +733,6 @@ elseif ($action === 'update_status') {
 
     $old_status = (string)($spk_row['status_spk'] ?? '');
     $target_status = mysqli_real_escape_string($conn, $status);
-
-    // Validasi: Sudah Reminder WA dan Sudah FU hanya bisa diakses dari "Sudah Cetak Invoice", "Sudah Reminder WA", atau "Sudah FU"
-    $follow_up_statuses = ['Sudah Cetak Invoice', 'Sudah Reminder WA', 'Sudah FU'];
-    if (in_array($status, ['Sudah Reminder WA', 'Sudah FU'])) {
-        if (!in_array($old_status, $follow_up_statuses)) {
-            echo json_encode(['success' => false, 'message' => 'Status ' . $status . ' hanya bisa diubah dari status "Sudah Cetak Invoice", "Sudah Reminder WA", atau "Sudah FU"']);
-            exit;
-        }
-    }
 
     // Jika dibatalkan, kembalikan stok sekali (idempotent) saat transisi ke Dibatalkan.
     if ($old_status !== 'Dibatalkan' && $status === 'Dibatalkan') {

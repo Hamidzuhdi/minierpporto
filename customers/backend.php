@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once '../followup_helper.php';
 
 global $conn;
 
@@ -11,6 +12,8 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 header('Content-Type: application/json');
+
+followup_ensure_table($conn);
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
@@ -87,7 +90,17 @@ elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $reminder = $_GET['reminder'] ?? '0';
     
-    $sql = "SELECT c.id, c.name, c.phone, c.address, c.created_at FROM customers c";
+    $tahap = followup_tahap_from_filter($reminder);
+    if ($tahap !== null) {
+        // Mode reminder: jatuh tempo dihitung dari SPK terakhir, plus ringkasan follow-up tahap ini.
+        $sql = "SELECT c.id, c.name, c.phone, c.address, c.created_at, ls.last_spk_id, ls.last_spk_at,
+                       (SELECT COUNT(*) FROM customer_followups f WHERE f.spk_id = ls.last_spk_id AND f.tahap = '$tahap') AS fu_attempts,
+                       (SELECT MAX(f.created_at) FROM customer_followups f WHERE f.spk_id = ls.last_spk_id AND f.tahap = '$tahap') AS fu_last_at
+                FROM customers c
+                JOIN (" . followup_last_spk_sql() . ") ls ON ls.customer_id = c.id";
+    } else {
+        $sql = "SELECT c.id, c.name, c.phone, c.address, c.created_at FROM customers c";
+    }
     $conditions = [];
     
     if (!empty($search)) {
@@ -95,30 +108,8 @@ elseif ($action === 'read') {
         $conditions[] = "(c.name LIKE '%$search%' OR c.phone LIKE '%$search%')";
     }
 
-    if ($reminder === '7days') {
-        $conditions[] = "EXISTS (
-            SELECT 1
-            FROM spk s
-            WHERE s.customer_id = c.id
-              AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
-              AND DATE_ADD(DATE(s.created_at), INTERVAL 7 DAY) <= CURDATE()
-        )";
-    } elseif ($reminder === '1' || $reminder === '2months') {
-        $conditions[] = "EXISTS (
-            SELECT 1
-            FROM spk s
-            WHERE s.customer_id = c.id
-              AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
-              AND DATE_ADD(DATE(s.created_at), INTERVAL 2 MONTH) <= CURDATE()
-        )";
-    } elseif ($reminder === '6months') {
-        $conditions[] = "EXISTS (
-            SELECT 1
-            FROM spk s
-            WHERE s.customer_id = c.id
-              AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
-              AND DATE_ADD(DATE(s.created_at), INTERVAL 6 MONTH) <= CURDATE()
-        )";
+    if ($tahap !== null) {
+        $conditions[] = followup_due_condition_sql($tahap, 'ls');
     }
 
     if (count($conditions) > 0) {
@@ -344,6 +335,76 @@ elseif ($action === 'update_vehicle') {
     } else {
         echo json_encode(['success' => false, 'message' => 'Gagal mengupdate kendaraan: ' . mysqli_error($conn)]);
     }
+}
+
+// ADD FOLLOWUP - Catat hasil follow-up customer untuk SPK terakhirnya
+elseif ($action === 'add_followup') {
+    $customer_id = (int)($_POST['customer_id'] ?? 0);
+    $tahap = trim((string)($_POST['tahap'] ?? ''));
+    $hasil = trim((string)($_POST['hasil'] ?? ''));
+    $note = trim((string)($_POST['note'] ?? ''));
+
+    if ($customer_id <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Customer tidak valid']);
+        exit;
+    }
+    if (!isset(FOLLOWUP_TAHAP_INTERVAL[$tahap])) {
+        echo json_encode(['success' => false, 'message' => 'Tahap follow-up tidak valid']);
+        exit;
+    }
+    if (!in_array($hasil, FOLLOWUP_HASIL, true)) {
+        echo json_encode(['success' => false, 'message' => 'Hasil follow-up wajib dipilih']);
+        exit;
+    }
+
+    $lastRes = mysqli_query(
+        $conn,
+        "SELECT ls.last_spk_id
+         FROM customers c
+         JOIN (" . followup_last_spk_sql() . ") ls ON ls.customer_id = c.id
+         WHERE c.id = $customer_id
+         LIMIT 1"
+    );
+    $last = $lastRes ? mysqli_fetch_assoc($lastRes) : null;
+    if (!$last) {
+        echo json_encode(['success' => false, 'message' => 'Customer belum punya SPK yang bisa di-follow-up']);
+        exit;
+    }
+
+    $sql = "INSERT INTO customer_followups (customer_id, spk_id, tahap, hasil, note, created_by)
+            VALUES ($customer_id,
+                    " . (int)$last['last_spk_id'] . ",
+                    '" . mysqli_real_escape_string($conn, $tahap) . "',
+                    '" . mysqli_real_escape_string($conn, $hasil) . "',
+                    '" . mysqli_real_escape_string($conn, $note) . "',
+                    " . (int)$_SESSION['user_id'] . ")";
+
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'message' => 'Hasil follow-up berhasil dicatat']);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Gagal mencatat follow-up: ' . mysqli_error($conn)]);
+    }
+}
+
+// GET FOLLOWUPS - Riwayat follow-up satu customer
+elseif ($action === 'get_followups') {
+    $customer_id = (int)($_GET['customer_id'] ?? 0);
+
+    $sql = "SELECT f.id, f.tahap, f.hasil, f.note, f.created_at, u.username AS created_by_name, s.kode_unik_reference
+            FROM customer_followups f
+            LEFT JOIN users u ON u.id = f.created_by
+            LEFT JOIN spk s ON s.id = f.spk_id
+            WHERE f.customer_id = $customer_id
+            ORDER BY f.id DESC
+            LIMIT 50";
+    $result = mysqli_query($conn, $sql);
+
+    $followups = [];
+    while ($result && ($row = mysqli_fetch_assoc($result))) {
+        $followups[] = $row;
+    }
+
+    echo json_encode(['success' => true, 'data' => $followups]);
 }
 
 // DELETE - Hapus Customer

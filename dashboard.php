@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'config.php';
+require_once 'followup_helper.php';
 
 // Pastikan user sudah login
 if (!isset($_SESSION['user_id'])) {
@@ -41,29 +42,12 @@ $spk_per_hari = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total
 // Entry SPK per bulan (created this month)
 $spk_per_bulan = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spk WHERE YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())"))['total'];
 
-// Customer reminder 7 hari (SPK bukan dibatalkan)
-$customer_reminder_7days_query = "SELECT COUNT(DISTINCT s.customer_id) as total
-                                                                    FROM spk s
-                                                                    WHERE s.customer_id IS NOT NULL
-                                                                        AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
-                                                                        AND DATE_ADD(DATE(s.created_at), INTERVAL 7 DAY) <= CURDATE()";
-$customer_reminder_7days = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_7days_query))['total'];
-
-// Customer reminder 2 bulanan (SPK bukan dibatalkan)
-$customer_reminder_count_query = "SELECT COUNT(DISTINCT s.customer_id) as total
-                                                                    FROM spk s
-                                                                    WHERE s.customer_id IS NOT NULL
-                                                                        AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
-                                                                        AND DATE_ADD(DATE(s.created_at), INTERVAL 2 MONTH) <= CURDATE()";
-$customer_reminder_count = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_count_query))['total'];
-
-// Customer reminder 6 bulanan (SPK bukan dibatalkan)
-$customer_reminder_6months_query = "SELECT COUNT(DISTINCT s.customer_id) as total
-                                                                    FROM spk s
-                                                                    WHERE s.customer_id IS NOT NULL
-                                                                        AND LOWER(COALESCE(s.status_spk, '')) <> 'dibatalkan'
-                                                                        AND DATE_ADD(DATE(s.created_at), INTERVAL 6 MONTH) <= CURDATE()";
-$customer_reminder_6months = mysqli_fetch_assoc(mysqli_query($conn, $customer_reminder_6months_query))['total'];
+// Customer reminder: dihitung dari SPK terakhir tiap customer (bukan dibatalkan),
+// customer yang sudah menjawab follow-up pada tahap itu tidak ikut dihitung.
+followup_ensure_table($conn);
+$customer_reminder_7days = followup_count_due($conn, '7days');
+$customer_reminder_count = followup_count_due($conn, '2months');
+$customer_reminder_6months = followup_count_due($conn, '6months');
 $sparepart_low_stock = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as total FROM spareparts WHERE current_stock <= min_stock"))['total'];
 
 // Purchase Stats
