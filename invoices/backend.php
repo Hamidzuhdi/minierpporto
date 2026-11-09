@@ -2,6 +2,7 @@
 session_start();
 require_once '../config.php';
 require_once '../finance_helper.php';
+require_once '../dp_helper.php';
 
 global $conn;
 
@@ -17,6 +18,7 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $user_role = $_SESSION['role'] ?? 'Admin';
 
 finance_ensure_default_accounts($conn);
+dp_ensure_schema($conn);
 
 $spkItemPriceColRes = mysqli_query($conn, "SHOW COLUMNS FROM spk_items LIKE 'harga_satuan'");
 $hasSpkItemPriceCol = $spkItemPriceColRes && mysqli_num_rows($spkItemPriceColRes) > 0;
@@ -196,61 +198,6 @@ function collect_uploaded_proof_files(): array {
     return $files;
 }
 
-function approved_payment_where_clause(bool $hasApprovalCols, string $alias = 'p'): string {
-    if (!$hasApprovalCols) {
-        return '';
-    }
-    return " AND ($alias.approval_status = 'approved' OR $alias.approval_status IS NULL)";
-}
-
-function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCols): array {
-    $approvedCond = approved_payment_where_clause($hasApprovalCols, 'p');
-    $qInv = mysqli_query($conn, "SELECT total, status_piutang FROM invoices WHERE id = $invoiceId LIMIT 1");
-    $inv = $qInv ? mysqli_fetch_assoc($qInv) : null;
-    if (!$inv) {
-        return ['success' => false, 'message' => 'Invoice tidak ditemukan'];
-    }
-
-    $qPaid = mysqli_query($conn, "SELECT COALESCE(SUM(p.amount), 0) total_paid FROM payments p WHERE p.invoice_id = $invoiceId $approvedCond");
-    $paid = (float)(mysqli_fetch_assoc($qPaid)['total_paid'] ?? 0);
-    $total = (float)$inv['total'];
-    $sisa = $total - $paid;
-
-    if ((string)($inv['status_piutang'] ?? '') === 'Tidak_Aktif') {
-        return [
-            'success' => true,
-            'status' => 'Tidak_Aktif',
-            'total_paid' => $paid,
-            'sisa' => $sisa,
-        ];
-    }
-
-    $newStatus = 'Belum Bayar';
-    $paidAtSql = 'NULL';
-    if ($sisa <= 0 && $total > 0) {
-        $newStatus = 'Lunas';
-        $qLastPaid = mysqli_query($conn, "SELECT MAX(p.tanggal) last_paid_date FROM payments p WHERE p.invoice_id = $invoiceId $approvedCond");
-        $lastPaidDate = $qLastPaid ? (mysqli_fetch_assoc($qLastPaid)['last_paid_date'] ?? null) : null;
-        if ($lastPaidDate) {
-            $paidAtSql = "'" . mysqli_real_escape_string($conn, $lastPaidDate) . "'";
-        }
-    } elseif ($paid > 0) {
-        $newStatus = 'Sudah Dicicil';
-    }
-
-    $ok = mysqli_query($conn, "UPDATE invoices SET status_piutang = '$newStatus', paid_at = $paidAtSql WHERE id = $invoiceId");
-    if (!$ok) {
-        return ['success' => false, 'message' => 'Gagal update status invoice: ' . mysqli_error($conn)];
-    }
-
-    return [
-        'success' => true,
-        'status' => $newStatus,
-        'total_paid' => $paid,
-        'sisa' => $sisa,
-    ];
-}
-
 ensure_payment_approval_columns($conn);
 ensure_invoice_user_column($conn);
 ensure_invoice_status_enum($conn);
@@ -350,8 +297,22 @@ if ($action === 'create_invoice') {
                 VALUES ($spk_id, '$no_invoice', CURDATE(), $biaya_jasa, $biaya_sparepart, $total, 'cash', 'Belum Bayar', NULL, " . (int)$_SESSION['user_id'] . ", NOW())";
     }
     
+    mysqli_begin_transaction($conn);
     if (mysqli_query($conn, $sql)) {
         $invoice_id = mysqli_insert_id($conn);
+
+        // DP SPK otomatis menjadi pembayaran invoice ini (sinkron dengan sisa piutang & status).
+        try {
+            dp_attach_to_invoice($conn, $spk_id, $invoice_id);
+            $recalc = recalc_invoice_status($conn, $invoice_id, $hasPaymentApprovalCols);
+            if (!$recalc['success']) {
+                throw new Exception($recalc['message']);
+            }
+        } catch (Exception $e) {
+            mysqli_rollback($conn);
+            echo json_encode(['success' => false, 'message' => 'Gagal membuat invoice: ' . $e->getMessage()]);
+            exit;
+        }
         
         // Audit log
         $log_msg = "Invoice #{$no_invoice} dibuat untuk SPK #{$spk_id} - {$spk['customer_name']} ({$spk['nomor_polisi']})";
@@ -359,8 +320,10 @@ if ($action === 'create_invoice') {
                     VALUES ({$_SESSION['user_id']}, 'CREATE', 'invoices', $invoice_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
         mysqli_query($conn, $sql_log);
         
+        mysqli_commit($conn);
         echo json_encode(['success' => true, 'message' => 'Invoice berhasil dibuat', 'invoice_id' => $invoice_id]);
     } else {
+        mysqli_rollback($conn);
         echo json_encode(['success' => false, 'message' => 'Gagal membuat invoice: ' . mysqli_error($conn)]);
     }
 }
@@ -423,7 +386,7 @@ elseif ($action === 'read') {
         $result_payments = mysqli_query($conn, $sql_payments);
         $payments_data = mysqli_fetch_assoc($result_payments);
         $row['total_paid'] = (float)$payments_data['total_paid'];
-        $row['sisa_piutang'] = $row['total'] - $row['total_paid'];
+        $row['sisa_piutang'] = max(0, $row['total'] - $row['total_paid']);
         
         $invoices[] = $row;
     }
@@ -535,7 +498,7 @@ elseif ($action === 'read_one') {
 
         $row['payments'] = $payments;
         $row['total_paid'] = $total_paid;
-        $row['sisa_piutang'] = $row['total'] - $total_paid;
+        $row['sisa_piutang'] = max(0, $row['total'] - $total_paid);
         
         echo json_encode(['success' => true, 'data' => $row]);
     } else {
@@ -744,7 +707,7 @@ elseif ($action === 'edit_payment') {
     }
     
     // Get payment data lama
-    $sql_payment = "SELECT amount FROM payments WHERE id = $payment_id";
+    $sql_payment = "SELECT amount, spk_dp_id FROM payments WHERE id = $payment_id";
     $result = mysqli_query($conn, $sql_payment);
     $payment = mysqli_fetch_assoc($result);
     
@@ -753,6 +716,11 @@ elseif ($action === 'edit_payment') {
         exit;
     }
     
+    if (!empty($payment['spk_dp_id'])) {
+        echo json_encode(['success' => false, 'message' => 'Pembayaran ini berasal dari DP SPK. Ubah atau hapus DP lewat halaman SPK (Analisa & Estimasi).']);
+        exit;
+    }
+
     $old_amount = (float)$payment['amount'];
     
     // Get invoice data
@@ -894,7 +862,7 @@ elseif ($action === 'delete_payment') {
     $payment_id = (int)$_POST['payment_id'];
     
     // Get payment data
-    $sql_payment = "SELECT invoice_id, amount FROM payments WHERE id = $payment_id";
+    $sql_payment = "SELECT invoice_id, amount, spk_dp_id FROM payments WHERE id = $payment_id";
     $result = mysqli_query($conn, $sql_payment);
     $payment = mysqli_fetch_assoc($result);
     
@@ -903,6 +871,11 @@ elseif ($action === 'delete_payment') {
         exit;
     }
     
+    if (!empty($payment['spk_dp_id'])) {
+        echo json_encode(['success' => false, 'message' => 'Pembayaran ini berasal dari DP SPK. Ubah atau hapus DP lewat halaman SPK (Analisa & Estimasi).']);
+        exit;
+    }
+
     $invoice_id = $payment['invoice_id'];
     $amount = (float)$payment['amount'];
 
@@ -1078,6 +1051,21 @@ elseif ($action === 'auto_create_invoices') {
         }
         
         if (mysqli_query($conn, $sql_insert)) {
+            $new_invoice_id = (int)mysqli_insert_id($conn);
+
+            // DP SPK otomatis menjadi pembayaran invoice ini
+            try {
+                dp_attach_to_invoice($conn, (int)$spk_id, $new_invoice_id);
+                $recalc = recalc_invoice_status($conn, $new_invoice_id, $hasPaymentApprovalCols);
+                if (!$recalc['success']) {
+                    throw new Exception($recalc['message']);
+                }
+            } catch (Exception $e) {
+                mysqli_rollback($conn);
+                echo json_encode(['success' => false, 'message' => 'Gagal membuat invoice: ' . $e->getMessage()]);
+                exit;
+            }
+
             $created_count++;
         } else {
             $errors[] = "SPK ID $spk_id: " . mysqli_error($conn);

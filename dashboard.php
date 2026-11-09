@@ -669,6 +669,7 @@ if ($is_owner) {
             'OUT-PO': 'Pengeluaran PO',
             'IN-CUST-SPAREPART': 'Pemasukan SPK Sparepart',
             'IN-CUST-PAYMENT': 'Pembayaran Invoice Customer',
+            'IN-CUST-DP': 'DP Customer (Uang Muka SPK)',
             'TRF-IN': 'Transfer Masuk',
             'TRF-OUT': 'Transfer Keluar'
         };

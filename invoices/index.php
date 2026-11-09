@@ -476,18 +476,19 @@ function displayInvoiceDetail(inv) {
                     <td>${formatDateTime(pay.tanggal)}</td>
                     <td>Rp ${formatNumber(pay.amount)}</td>
                     <td>${methodLabel}</td>
-                    <td>${pay.note || '-'}</td>
+                    <td>${pay.spk_dp_id ? '<span class="badge bg-info text-dark">DP SPK</span> ' : ''}${pay.note || '-'}</td>
                     <td>${proofHtml}</td>
                     <td>${updatedAtDisplay}</td>
                     <td>
                         ${statusBadge}
                         <div class="mt-1"></div>
-                        ${(isOwner || userRole === 'Admin') ? `
+                        ${pay.spk_dp_id ? '<small class="text-muted">Kelola dari halaman SPK</small>' : ''}
+                        ${(isOwner || userRole === 'Admin') && !pay.spk_dp_id ? `
                         <button class="btn btn-warning btn-sm" onclick="editPayment(${pay.id}, ${inv.id})" title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
                         ` : ''}
-                        ${(isOwner || userRole === 'Admin') ? `
+                        ${(isOwner || userRole === 'Admin') && !pay.spk_dp_id ? `
                         <button class="btn btn-danger btn-sm" onclick="deletePayment(${pay.id}, ${inv.id})" title="Hapus">
                             <i class="fas fa-trash"></i>
                         </button>

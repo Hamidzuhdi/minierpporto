@@ -13,6 +13,8 @@ include '../header.php';
 // Cek role untuk hide/show harga
 $user_role = $_SESSION['role'] ?? 'Admin';
 $is_owner = ($user_role === 'Owner');
+// DP (uang muka) hanya dikelola Owner/Admin
+$can_dp = in_array($user_role, ['Owner', 'Admin'], true);
 ?>
 
 <?php if (!$is_owner): ?>
@@ -169,6 +171,34 @@ $is_owner = ($user_role === 'Owner');
                         <textarea class="form-control" id="keluhan_customer" name="keluhan_customer" rows="4" required placeholder="Jelaskan keluhan/masalah kendaraan..."></textarea>
                     </div>
                     
+                    <?php if ($can_dp): ?>
+                    <div class="border rounded p-3 mb-3 bg-light">
+                        <h6 class="mb-2"><i class="fas fa-hand-holding-usd"></i> DP / Uang Muka <small class="text-muted">(opsional)</small></h6>
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label for="dp_amount" class="form-label">Nominal DP</label>
+                                <input type="number" class="form-control" id="dp_amount" name="dp_amount" min="0" step="1000" placeholder="0">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="dp_method" class="form-label">Metode</label>
+                                <select class="form-select" id="dp_method" name="dp_method">
+                                    <option value="cash">Cash / Tunai</option>
+                                    <option value="transfer" selected>Rekening / Transfer</option>
+                                    <option value="qris">QRIS</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="dp_tanggal" class="form-label">Tanggal DP</label>
+                                <input type="date" class="form-control" id="dp_tanggal" name="dp_tanggal">
+                            </div>
+                            <div class="col-12">
+                                <input type="text" class="form-control" id="dp_note" name="dp_note" placeholder="Catatan DP (opsional)">
+                            </div>
+                        </div>
+                        <small class="text-muted">Total SPK belum perlu ada. DP langsung tercatat di keuangan pada tanggal DP, dan otomatis ikut dihitung saat invoice dibuat.</small>
+                    </div>
+                    <?php endif; ?>
+
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle"></i> Kode SPK akan di-generate otomatis saat disimpan.
                     </div>
@@ -329,6 +359,59 @@ $is_owner = ($user_role === 'Owner');
                         <h5 class="mb-0" id="estimasiBiayaTotal">Rp 0</h5>
                     </div>
 
+                    <?php if ($can_dp): ?>
+                    <div class="card mt-3" id="dpCard">
+                        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                            <strong>DP / Uang Muka</strong>
+                            <span class="badge bg-success">Total DP: <span id="dpTotalBadge">Rp 0</span></span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control form-control-sm" id="dp_new_amount" min="0" step="1000" placeholder="Nominal DP" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addDp(); }">
+                                </div>
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="dp_new_method">
+                                        <option value="cash">Cash / Tunai</option>
+                                        <option value="transfer" selected>Rekening / Transfer</option>
+                                        <option value="qris">QRIS</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="date" class="form-control form-control-sm" id="dp_new_tanggal" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addDp(); }">
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" class="btn btn-success btn-sm w-100" onclick="addDp()">
+                                        <i class="fas fa-plus"></i> Tambah DP
+                                    </button>
+                                </div>
+                                <div class="col-12">
+                                    <input type="text" class="form-control form-control-sm" id="dp_new_note" placeholder="Catatan DP (opsional)" onkeydown="if (event.key === 'Enter') { event.preventDefault(); addDp(); }">
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered mb-1">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Tanggal</th>
+                                            <th>Metode</th>
+                                            <th>Nominal</th>
+                                            <th>Catatan</th>
+                                            <th>Oleh</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dpListTable">
+                                        <tr><td colspan="6" class="text-center text-muted">Belum ada DP</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <small class="text-muted d-block" id="dpSisaInfo"></small>
+                            <small class="text-muted">DP langsung tercatat di keuangan pada tanggalnya. Menghapus DP mengeluarkannya kembali dari keuangan.</small>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
                     <div class="card mt-3">
                         <div class="card-header py-2 d-flex justify-content-between align-items-center">
                             <strong>Flow Diskon SPK</strong>
@@ -452,6 +535,10 @@ $is_owner = ($user_role === 'Owner');
 <script>
 const userRole = '<?php echo $_SESSION['role'] ?? 'Admin'; ?>';
 const isOwner = (userRole === 'Owner');
+const canDp = <?php echo $can_dp ? 'true' : 'false'; ?>;
+const DP_METHOD_LABEL = {cash: 'Cash / Tunai', transfer: 'Rekening / Transfer', qris: 'QRIS'};
+let currentDpSpkId = 0;
+let currentDpTotal = 0;
 const SPK_CREATE_DRAFT_KEY = 'draft_spk_create_v1';
 let isSpkCreateDraftHydrating = false;
 
@@ -763,6 +850,7 @@ function openAddModal() {
     try {
         $('#spkForm')[0].reset();
         $('#tanggal').val(new Date().toISOString().split('T')[0]);
+        $('#dp_tanggal').val(new Date().toISOString().split('T')[0]);
         $('#customer_id_real').val('');
 
         if ($.fn.select2 && $('#vehicle_id').hasClass('select2-hidden-accessible')) {
@@ -805,7 +893,7 @@ $('#spkForm').on('submit', function(e) {
         success: function(response) {
             if (response.success) {
                 clearSpkCreateDraft();
-                showAlert('success', response.message + ' - Kode: ' + response.kode_unik);
+                showAlert(response.dp_failed ? 'warning' : 'success', response.message + ' - Kode: ' + response.kode_unik);
                 $('#spkModal').modal('hide');
                 loadSPKs();
             } else {
@@ -951,6 +1039,7 @@ function viewDetail(id) {
 
                 const grandBeforeDiscount = totalSparepart + totalJasa;
                 const grandAfterDiscount = Math.max(0, grandBeforeDiscount - discountApproved);
+                const dpTotal = parseFloat(spk.dp_total) || 0;
 
                 html += `
                         </tbody>
@@ -959,6 +1048,10 @@ function viewDetail(id) {
                             <tr><th colspan="3">Total Jasa Service:</th><th>Rp ${formatNumber(totalJasa)}</th></tr>
                             <tr><th colspan="3">Diskon Disetujui:</th><th>Rp ${formatNumber(discountApproved)}</th></tr>
                             <tr><th colspan="3">GRAND TOTAL:</th><th><strong>Rp ${formatNumber(grandAfterDiscount)}</strong></th></tr>
+                            ${dpTotal > 0 ? `
+                            <tr><th colspan="3">DP (Uang Muka):</th><th>Rp ${formatNumber(dpTotal)}</th></tr>
+                            <tr><th colspan="3">Sisa Pembayaran:</th><th>Rp ${formatNumber(Math.max(0, grandAfterDiscount - dpTotal))}</th></tr>
+                            ` : ''}
                         </tfoot>
                     </table>
 
@@ -1016,6 +1109,7 @@ function openAnalisaModal(id) {
                 $('#kilometer').val((spk.kilometer !== null && spk.kilometer !== '') ? formatKilometerInput(spk.kilometer) : '');
                 restoreAnalisaDraft(spk.id);
                 renderDiscountSection(spk);
+                renderDpSection(spk);
                 loadDiscountHistory(spk.id);
                 
                 // Load services for this SPK
@@ -1301,6 +1395,129 @@ function refreshEstimasiBiaya() {
     $('#estimasiBiayaTotalFooter').text(label);
     $('#estimasiBiayaBreakdown').text(breakdown);
     $('#estimasiBiayaFooterBreakdown').text(breakdown);
+
+    if (canDp) {
+        $('#dpSisaInfo').text(currentDpTotal > 0
+            ? 'Estimasi sisa pembayaran setelah DP: Rp ' + formatNumber(Math.max(0, netTotal - currentDpTotal))
+            : '');
+    }
+}
+
+function escapeHtml(text) {
+    return $('<div>').text(text == null ? '' : String(text)).html();
+}
+
+// DP / Uang Muka (Owner/Admin)
+function renderDpSection(spk) {
+    if (!canDp) {
+        return;
+    }
+
+    currentDpSpkId = spk.id;
+    $('#dp_new_amount').val('');
+    $('#dp_new_note').val('');
+    $('#dp_new_method').val('transfer');
+    $('#dp_new_tanggal').val(new Date().toISOString().split('T')[0]);
+    renderDpList(spk.down_payments || [], spk.dp_total || 0);
+}
+
+function renderDpList(rows, total) {
+    currentDpTotal = parseFloat(total) || 0;
+    $('#dpTotalBadge').text('Rp ' + formatNumber(currentDpTotal));
+
+    let html = '';
+    if (rows.length === 0) {
+        html = '<tr><td colspan="6" class="text-center text-muted">Belum ada DP</td></tr>';
+    } else {
+        rows.forEach(function(dp) {
+            const refunded = !!dp.refunded_at;
+            html += `
+                <tr class="${refunded ? 'text-muted text-decoration-line-through' : ''}">
+                    <td>${formatDate(dp.tanggal)}</td>
+                    <td>${DP_METHOD_LABEL[dp.method] || dp.method}</td>
+                    <td>Rp ${formatNumber(dp.amount)}</td>
+                    <td>${escapeHtml(dp.note) || '-'}${refunded ? ' <span class="badge bg-secondary">Dikembalikan</span>' : ''}</td>
+                    <td>${escapeHtml(dp.created_by_name) || '-'}</td>
+                    <td>${refunded ? '' : `<button type="button" class="btn btn-danger btn-sm" onclick="deleteDp(${dp.id})" title="Hapus DP"><i class="fas fa-trash"></i></button>`}</td>
+                </tr>
+            `;
+        });
+    }
+    $('#dpListTable').html(html);
+    refreshEstimasiBiaya();
+}
+
+function refreshDpSection(spkId) {
+    $.ajax({
+        url: 'backend.php?action=read_one&id=' + spkId + '&t=' + Date.now(),
+        type: 'GET',
+        dataType: 'json',
+        cache: false,
+        success: function(response) {
+            if (response.success) {
+                renderDpList(response.data.down_payments || [], response.data.dp_total || 0);
+            }
+        }
+    });
+}
+
+function addDp() {
+    const amount = parseFloat($('#dp_new_amount').val()) || 0;
+    if (amount <= 0) {
+        showAlert('warning', 'Nominal DP harus diisi');
+        return;
+    }
+
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: {
+            action: 'add_dp',
+            spk_id: currentDpSpkId,
+            amount: amount,
+            method: $('#dp_new_method').val(),
+            tanggal: $('#dp_new_tanggal').val(),
+            note: $('#dp_new_note').val()
+        },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                $('#dp_new_amount').val('');
+                $('#dp_new_note').val('');
+                refreshDpSection(currentDpSpkId);
+            } else {
+                showAlert('danger', response.message);
+            }
+        },
+        error: function() {
+            showAlert('danger', 'Gagal mencatat DP');
+        }
+    });
+}
+
+function deleteDp(dpId) {
+    if (!confirm('Hapus DP ini? Nominalnya akan dikeluarkan kembali dari keuangan.')) {
+        return;
+    }
+
+    $.ajax({
+        url: 'backend.php',
+        type: 'POST',
+        data: { action: 'delete_dp', dp_id: dpId },
+        dataType: 'json',
+        success: function(response) {
+            if (response.success) {
+                showAlert('success', response.message);
+                refreshDpSection(currentDpSpkId);
+            } else {
+                showAlert('danger', response.message);
+            }
+        },
+        error: function() {
+            showAlert('danger', 'Gagal menghapus DP');
+        }
+    });
 }
 
 function renderDiscountSection(spk) {

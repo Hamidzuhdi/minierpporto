@@ -750,6 +750,7 @@ function loadExpenseCategories(){
         // Rebuild filter categories (dynamic + static)
         let fCat = '<option value="">Semua Kategori</option>' +
                    '<option value="IN-CUST-PAYMENT">IN-CUST-PAYMENT</option>' +
+                   '<option value="IN-CUST-DP">IN-CUST-DP</option>' +
                    '<option value="IN-CUST-SPAREPART">IN-CUST-SPAREPART</option>' +
                    '<option value="OUT-PO">OUT-PO</option>' +
                    '<option value="TRF-IN">TRF-IN</option>' +

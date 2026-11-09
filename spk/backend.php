@@ -2,6 +2,7 @@
 session_start();
 require_once '../config.php';
 require_once '../finance_helper.php';
+require_once '../dp_helper.php';
 
 global $conn;
 
@@ -18,6 +19,7 @@ $currentUserId = (int)($_SESSION['user_id'] ?? 0);
 $currentUserRole = (string)($_SESSION['role'] ?? 'Admin');
 
 finance_ensure_default_accounts($conn);
+dp_ensure_schema($conn);
 
 function spk_insert_discount_history(
     mysqli $conn,
@@ -199,6 +201,29 @@ if ($action === 'create') {
         exit;
     }
 
+    // DP (uang muka) opsional: dicatat bersamaan dengan SPK, total SPK belum perlu ada.
+    $dp_amount = (float)($_POST['dp_amount'] ?? 0);
+    $dp_tanggal = trim((string)($_POST['dp_tanggal'] ?? ''));
+    if ($dp_tanggal === '') {
+        $dp_tanggal = date('Y-m-d');
+    }
+    $dp_method = trim((string)($_POST['dp_method'] ?? 'transfer'));
+    $dp_note = trim((string)($_POST['dp_note'] ?? ''));
+    if ($dp_amount > 0) {
+        if (!in_array($currentUserRole, ['Owner', 'Admin'], true)) {
+            echo json_encode(['success' => false, 'message' => 'Hanya Owner/Admin yang bisa mencatat DP']);
+            exit;
+        }
+        if (!in_array($dp_method, PAYMENT_METHODS, true)) {
+            echo json_encode(['success' => false, 'message' => 'Metode pembayaran DP tidak valid']);
+            exit;
+        }
+        if (!dp_is_valid_date($dp_tanggal)) {
+            echo json_encode(['success' => false, 'message' => 'Tanggal DP tidak valid']);
+            exit;
+        }
+    }
+
     // Always bind customer to the selected vehicle owner to avoid mismatches.
     $vehicleCheck = mysqli_query($conn, "SELECT customer_id FROM vehicles WHERE id = $vehicle_id LIMIT 1");
     $vehicleRow = $vehicleCheck ? mysqli_fetch_assoc($vehicleCheck) : null;
@@ -268,9 +293,22 @@ if ($action === 'create') {
     }
 
     if ($created) {
+        $message = 'SPK berhasil dibuat';
+        $dp_failed = false;
+        if ($dp_amount > 0) {
+            $dp = dp_add($conn, (int)$spk_id, $dp_tanggal, $dp_amount, $dp_method, $dp_note, $currentUserId);
+            if ($dp['success']) {
+                $message .= ', DP Rp ' . number_format($dp_amount, 0, ',', '.') . ' tercatat';
+            } else {
+                $dp_failed = true;
+                $message .= ', tetapi DP gagal dicatat: ' . $dp['message'] . ' (catat ulang lewat Analisa & Estimasi)';
+            }
+        }
+
         echo json_encode([
             'success' => true,
-            'message' => 'SPK berhasil dibuat',
+            'message' => $message,
+            'dp_failed' => $dp_failed,
             'kode_unik' => $kode_unik_reference,
             'spk_id' => $spk_id
         ]);
@@ -434,6 +472,12 @@ elseif ($action === 'read_one') {
         }
         
         $row['warehouse_requests'] = $warehouse_requests;
+
+        // Nominal DP hanya untuk Owner/Admin
+        if (in_array($currentUserRole, ['Owner', 'Admin'], true)) {
+            $row['down_payments'] = dp_list($conn, $id);
+            $row['dp_total'] = dp_total($conn, $id);
+        }
 
         echo json_encode(['success' => true, 'data' => $row]);
     } else {
@@ -734,8 +778,28 @@ elseif ($action === 'update_status') {
     $old_status = (string)($spk_row['status_spk'] ?? '');
     $target_status = mysqli_real_escape_string($conn, $status);
 
+    // Pembatalan: DP dikembalikan (ledger dibalik, pendapatan & saldo berkurang) dan stok dikembalikan,
+    // semuanya satu transaksi bersama perubahan status supaya tidak setengah jalan.
+    $is_cancel_transition = ($old_status !== 'Dibatalkan' && $status === 'Dibatalkan');
+    $dp_refunded_total = 0.0;
+    if ($is_cancel_transition) {
+        if (dp_total($conn, $id) > 0 && !in_array($currentUserRole, ['Owner', 'Admin'], true)) {
+            echo json_encode(['success' => false, 'message' => 'Hanya Owner/Admin yang bisa membatalkan SPK yang sudah ada DP']);
+            exit;
+        }
+
+        mysqli_begin_transaction($conn);
+        $dp_refund = dp_refund_all($conn, $id, $currentUserId);
+        if (!$dp_refund['success']) {
+            mysqli_rollback($conn);
+            echo json_encode(['success' => false, 'message' => $dp_refund['message']]);
+            exit;
+        }
+        $dp_refunded_total = (float)$dp_refund['total'];
+    }
+
     // Jika dibatalkan, kembalikan stok sekali (idempotent) saat transisi ke Dibatalkan.
-    if ($old_status !== 'Dibatalkan' && $status === 'Dibatalkan') {
+    if ($is_cancel_transition) {
         $restore_res = mysqli_query($conn, "SELECT sparepart_id, SUM(qty) as qty_total FROM spk_items WHERE spk_id = $id GROUP BY sparepart_id");
         if (!$restore_res) {
             echo json_encode(['success' => false, 'message' => 'Gagal membaca item SPK untuk pembatalan: ' . mysqli_error($conn)]);
@@ -751,10 +815,62 @@ elseif ($action === 'update_status') {
 
     $sql = "UPDATE spk SET status_spk = '$target_status' WHERE id = $id";
     if (mysqli_query($conn, $sql)) {
-        echo json_encode(['success' => true, 'message' => 'Status SPK berhasil diupdate']);
+        if ($is_cancel_transition) {
+            mysqli_commit($conn);
+        }
+
+        $message = 'Status SPK berhasil diupdate';
+        if ($dp_refunded_total > 0) {
+            $message .= '. DP Rp ' . number_format($dp_refunded_total, 0, ',', '.') . ' dikembalikan (pendapatan dikurangi)';
+        }
+        echo json_encode(['success' => true, 'message' => $message]);
     } else {
+        if ($is_cancel_transition) {
+            mysqli_rollback($conn);
+        }
         echo json_encode(['success' => false, 'message' => 'Gagal update status: ' . mysqli_error($conn)]);
     }
+}
+
+// ADD DP - Catat uang muka SPK (Owner/Admin)
+elseif ($action === 'add_dp') {
+    if (!in_array($currentUserRole, ['Owner', 'Admin'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner/Admin yang bisa mencatat DP']);
+        exit;
+    }
+
+    $dp_tanggal = trim((string)($_POST['tanggal'] ?? ''));
+    if ($dp_tanggal === '') {
+        $dp_tanggal = date('Y-m-d');
+    }
+
+    $result = dp_add(
+        $conn,
+        (int)($_POST['spk_id'] ?? 0),
+        $dp_tanggal,
+        (float)($_POST['amount'] ?? 0),
+        trim((string)($_POST['method'] ?? 'transfer')),
+        trim((string)($_POST['note'] ?? '')),
+        $currentUserId
+    );
+
+    echo json_encode($result['success']
+        ? ['success' => true, 'message' => 'DP berhasil dicatat']
+        : ['success' => false, 'message' => $result['message']]);
+}
+
+// DELETE DP - Hapus uang muka SPK (Owner/Admin)
+elseif ($action === 'delete_dp') {
+    if (!in_array($currentUserRole, ['Owner', 'Admin'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner/Admin yang bisa menghapus DP']);
+        exit;
+    }
+
+    $result = dp_delete($conn, (int)($_POST['dp_id'] ?? 0), $currentUserId);
+
+    echo json_encode($result['success']
+        ? ['success' => true, 'message' => 'DP berhasil dihapus dan dikeluarkan dari keuangan']
+        : ['success' => false, 'message' => $result['message']]);
 }
 
 // ADD SERVICE TO SPK
@@ -979,6 +1095,10 @@ elseif ($action === 'create_revision') {
     $customer_id = (int)$original_spk['customer_id'];
     $vehicle_id = (int)$original_spk['vehicle_id'];
     
+    // Seluruh proses revisi satu transaksi: jika ada langkah gagal (mis. saldo tidak cukup untuk
+    // membalik pembayaran invoice lama), semua perubahan dibatalkan.
+    mysqli_begin_transaction($conn);
+
     // Buat SPK revisi baru dengan status langsung "Sudah Cetak Invoice"
     $insert_spk_sql = "INSERT INTO spk (kode_unik_reference, customer_id, vehicle_id, tanggal, keluhan_customer, 
                                        analisa_mekanik, nama_mekanik, service_description, saran_service,
@@ -1014,6 +1134,9 @@ elseif ($action === 'create_revision') {
         echo json_encode(['success' => false, 'message' => 'Gagal copy services: ' . mysqli_error($conn)]);
         exit;
     }
+
+    // DP milik SPK asli ikut pindah ke SPK revisi (uangnya tetap diterima, tidak dikembalikan).
+    dp_move_to_spk($conn, $original_spk_id, $new_spk_id);
     
     // Auto-generate invoice baru untuk SPK revisi
     // Hitung total sparepart dari spk_items menggunakan GENERATED subtotal
@@ -1058,6 +1181,16 @@ elseif ($action === 'create_revision') {
     
     $invoice_id = mysqli_insert_id($conn);
 
+    // DP ikut dihitung sebagai pembayaran invoice revisi, lalu total & status invoice disinkronkan.
+    try {
+        dp_attach_to_invoice($conn, $new_spk_id, $invoice_id);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        echo json_encode(['success' => false, 'message' => 'Revisi dibatalkan: ' . $e->getMessage()]);
+        exit;
+    }
+    spk_sync_active_invoice_totals($conn, $new_spk_id);
+
     // Nonaktifkan invoice lama dari SPK original agar tidak dihitung di dashboard/laba.
     $inactive_note = mysqli_real_escape_string($conn, 'Dinonaktifkan otomatis karena revisi SPK ' . $new_kode);
     $sql_inactive_old_invoice = "UPDATE invoices
@@ -1076,10 +1209,20 @@ elseif ($action === 'create_revision') {
     if ($old_invoices_res) {
         while ($old_inv = mysqli_fetch_assoc($old_invoices_res)) {
             $old_inv_id = (int)$old_inv['id'];
-            // Delete payments first (foreign key constraint)
+            // Balikkan transaksi keuangan pembayaran invoice lama lewat finance_reverse_transaction
+            // supaya saldo akun ikut dikoreksi. Pembayaran asal DP tidak ikut dibalik: transaksinya
+            // bertipe 'spk' dan sudah pindah ke invoice revisi.
+            $old_tx_res = mysqli_query($conn, "SELECT id FROM finance_transactions WHERE reference_type='invoice' AND reference_id=$old_inv_id");
+            while ($old_tx_res && ($old_tx = mysqli_fetch_assoc($old_tx_res))) {
+                $reverse = finance_reverse_transaction($conn, (int)$old_tx['id']);
+                if (!$reverse['success']) {
+                    mysqli_rollback($conn);
+                    echo json_encode(['success' => false, 'message' => 'Revisi dibatalkan: ' . $reverse['message']]);
+                    exit;
+                }
+            }
+            // Hapus pembayaran invoice lama
             mysqli_query($conn, "DELETE FROM payments WHERE invoice_id = $old_inv_id");
-            // Delete finance transactions
-            mysqli_query($conn, "DELETE FROM finance_transactions WHERE reference_type='invoice' AND reference_id=$old_inv_id");
         }
     }
     
@@ -1104,6 +1247,8 @@ elseif ($action === 'create_revision') {
     $sql_log = "INSERT INTO audit_logs (user_id, action, target_table, target_id, description, created_at)
                 VALUES ({$currentUserId}, 'CREATE_REVISION', 'spk', $new_spk_id, '" . mysqli_real_escape_string($conn, $log_msg) . "', NOW())";
     mysqli_query($conn, $sql_log);
+
+    mysqli_commit($conn);
     
     echo json_encode([
         'success' => true,

@@ -473,3 +473,67 @@ function finance_reject_transaction(mysqli $conn, int $transactionId, ?int $reje
 
     return ['success' => true];
 }
+
+
+// Pembayaran yang dihitung: approved (atau tanpa kolom approval pada skema lama).
+function approved_payment_where_clause(bool $hasApprovalCols, string $alias = 'p'): string {
+    if (!$hasApprovalCols) {
+        return '';
+    }
+    return " AND ($alias.approval_status = 'approved' OR $alias.approval_status IS NULL)";
+}
+
+function recalc_invoice_status(mysqli $conn, int $invoiceId, bool $hasApprovalCols): array {
+    $approvedCond = approved_payment_where_clause($hasApprovalCols, 'p');
+    $qInv = mysqli_query($conn, "SELECT total, status_piutang FROM invoices WHERE id = $invoiceId LIMIT 1");
+    $inv = $qInv ? mysqli_fetch_assoc($qInv) : null;
+    if (!$inv) {
+        return ['success' => false, 'message' => 'Invoice tidak ditemukan'];
+    }
+
+    $qPaid = mysqli_query($conn, "SELECT COALESCE(SUM(p.amount), 0) total_paid FROM payments p WHERE p.invoice_id = $invoiceId $approvedCond");
+    $paid = (float)(mysqli_fetch_assoc($qPaid)['total_paid'] ?? 0);
+    $total = (float)$inv['total'];
+    $sisa = $total - $paid;
+
+    if ((string)($inv['status_piutang'] ?? '') === 'Tidak_Aktif') {
+        return [
+            'success' => true,
+            'status' => 'Tidak_Aktif',
+            'total_paid' => $paid,
+            'sisa' => $sisa,
+        ];
+    }
+
+    $newStatus = 'Belum Bayar';
+    $paidAtSql = 'NULL';
+    if ($sisa <= 0 && $total > 0) {
+        $newStatus = 'Lunas';
+        $qLastPaid = mysqli_query($conn, "SELECT MAX(p.tanggal) last_paid_date FROM payments p WHERE p.invoice_id = $invoiceId $approvedCond");
+        $lastPaidDate = $qLastPaid ? (mysqli_fetch_assoc($qLastPaid)['last_paid_date'] ?? null) : null;
+        if ($lastPaidDate) {
+            $paidAtSql = "'" . mysqli_real_escape_string($conn, $lastPaidDate) . "'";
+        }
+    } elseif ($paid > 0) {
+        $newStatus = 'Sudah Dicicil';
+    }
+
+    $ok = mysqli_query($conn, "UPDATE invoices SET status_piutang = '$newStatus', paid_at = $paidAtSql WHERE id = $invoiceId");
+    if (!$ok) {
+        return ['success' => false, 'message' => 'Gagal update status invoice: ' . mysqli_error($conn)];
+    }
+
+    return [
+        'success' => true,
+        'status' => $newStatus,
+        'total_paid' => $paid,
+        'sisa' => $sisa,
+    ];
+}
+
+
+function finance_payments_have_approval_cols(mysqli $conn): bool
+{
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'approval_status'");
+    return $res && mysqli_num_rows($res) > 0;
+}

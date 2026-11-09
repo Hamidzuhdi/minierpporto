@@ -2,6 +2,7 @@
 session_start();
 require_once '../config.php';
 require_once '../vendor/autoload.php'; // mPDF autoload
+require_once '../dp_helper.php';
 
 // Pastikan user sudah login dan role Owner
 if (!isset($_SESSION['user_id'])) {
@@ -80,6 +81,11 @@ if ($discount_amount > $subtotal) {
     $discount_amount = $subtotal;
 }
 $grand_total = $subtotal - $discount_amount;
+
+// DP (uang muka) yang sudah diterima untuk SPK ini
+dp_ensure_schema($conn);
+$dp_total = dp_total($conn, $spk_id);
+$sisa_pembayaran = max(0, $grand_total - $dp_total);
 
 // Generate filename: namacust_nopol_mobil_tglsekarang
 $customer_name_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['customer_name']);
@@ -393,6 +399,16 @@ ob_start();
                     <td><strong>GRAND TOTAL:</strong></td>
                     <td class="text-right"><strong>Rp <?php echo number_format($grand_total, 0, ',', '.'); ?></strong></td>
                 </tr>
+                <?php if ($dp_total > 0): ?>
+                <tr>
+                    <td><strong>DP (Uang Muka):</strong></td>
+                    <td class="text-right">- Rp <?php echo number_format($dp_total, 0, ',', '.'); ?></td>
+                </tr>
+                <tr class="grand-total">
+                    <td><strong>SISA PEMBAYARAN:</strong></td>
+                    <td class="text-right"><strong>Rp <?php echo number_format($sisa_pembayaran, 0, ',', '.'); ?></strong></td>
+                </tr>
+                <?php endif; ?>
             </table>
         </div>
     </div>
