@@ -441,65 +441,9 @@ elseif ($action === 'read_one') {
     }
 }
 
-// GET CUSTOMERS - Untuk dropdown
-elseif ($action === 'get_customers') {
-    $sql = "SELECT
-                MIN(c.id) as id,
-                MIN(c.name) as name,
-                MIN(c.phone) as phone,
-                GROUP_CONCAT(c.id ORDER BY c.id ASC) as customer_ids
-            FROM customers c
-            GROUP BY LOWER(TRIM(c.name)), COALESCE(TRIM(c.phone), '')
-            ORDER BY MIN(c.name) ASC";
-    $result = mysqli_query($conn, $sql);
-    
-    $customers = [];
-    while ($row = mysqli_fetch_assoc($result)) {
-        $customers[] = $row;
-    }
-    
-    echo json_encode(['success' => true, 'data' => $customers]);
-}
-
-// GET VEHICLES BY CUSTOMER
-elseif ($action === 'get_vehicles') {
-    $customer_ids_raw = trim((string)($_GET['customer_ids'] ?? $_GET['customer_id'] ?? ''));
-    $idParts = array_filter(array_map('trim', explode(',', $customer_ids_raw)), function ($v) {
-        return $v !== '';
-    });
-
-    $ids = [];
-    foreach ($idParts as $part) {
-        $id = (int)$part;
-        if ($id > 0) {
-            $ids[] = $id;
-        }
-    }
-    $ids = array_values(array_unique($ids));
-
-    if (count($ids) === 0) {
-        echo json_encode(['success' => true, 'data' => []]);
-        exit;
-    }
-
-    $idsSql = implode(',', $ids);
-    $sql = "SELECT id, customer_id, nomor_polisi, merk, model, tahun
-            FROM vehicles
-            WHERE customer_id IN ($idsSql)
-            ORDER BY nomor_polisi ASC";
-    $result = mysqli_query($conn, $sql);
-    
-    $vehicles = [];
-    while ($row = mysqli_fetch_assoc($result)) {
-        $vehicles[] = $row;
-    }
-    
-    echo json_encode(['success' => true, 'data' => $vehicles]);
-}
-
-// GET ALL VEHICLES FOR FILTER (with customer name)
+// GET ALL VEHICLES FOR FILTER & CREATE FORM (with customer name & phone)
 elseif ($action === 'get_all_vehicles') {
-    $sql = "SELECT v.id, v.nomor_polisi, v.merk, v.model, c.name as customer_name 
+    $sql = "SELECT v.id, v.customer_id, v.nomor_polisi, v.merk, v.model, c.name as customer_name, c.phone as customer_phone 
             FROM vehicles v
             JOIN customers c ON v.customer_id = c.id
             ORDER BY c.name ASC, v.nomor_polisi ASC";

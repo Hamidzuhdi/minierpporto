@@ -152,18 +152,11 @@ $is_owner = ($user_role === 'Owner');
                     <input type="hidden" name="action" value="create">
                     
                     <div class="mb-3">
-                        <label for="customer_id" class="form-label">Customer *</label>
-                        <select class="form-select" id="customer_id" name="customer_group" required>
-                            <option value="">-- Pilih Customer --</option>
+                        <label for="vehicle_id" class="form-label">Customer / Kendaraan *</label>
+                        <select class="form-select" id="vehicle_id" name="vehicle_id" required>
+                            <option value="">-- Cari nama, no. telp, atau no. plat --</option>
                         </select>
                         <input type="hidden" id="customer_id_real" name="customer_id" value="">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="vehicle_id" class="form-label">Kendaraan *</label>
-                        <select class="form-select" id="vehicle_id" name="vehicle_id" required disabled>
-                            <option value="">-- Pilih Customer Dulu --</option>
-                        </select>
                     </div>
                     
                     <div class="mb-3">
@@ -464,9 +457,8 @@ let isSpkCreateDraftHydrating = false;
 
 $(document).ready(function() {
     loadSPKs();
-    loadCustomers();
-    loadAllVehiclesForFilter();
-    
+    loadVehicleOptions();
+
     // Check if need to open modal after redirect from revision
     let urlParams = new URLSearchParams(window.location.search);
     let openModalId = urlParams.get('open_modal');
@@ -507,7 +499,7 @@ $(document).ready(function() {
     });
 
     // Autosave draft for SPK create form
-    $('#spkForm').on('input change', '#customer_id, #vehicle_id, #tanggal, #keluhan_customer', function() {
+    $('#spkForm').on('input change', '#vehicle_id, #tanggal, #keluhan_customer', function() {
         saveSpkCreateDraft();
     });
 
@@ -516,18 +508,7 @@ $(document).ready(function() {
         saveAnalisaDraft();
     });
     
-    // Load vehicles saat customer dipilih
-    $('#customer_id').on('change', function() {
-        let customerGroup = $(this).val();
-        $('#customer_id_real').val('');
-        if (customerGroup) {
-            loadVehicles(customerGroup);
-        } else {
-            $('#vehicle_id').html('<option value="">-- Pilih Customer Dulu --</option>').prop('disabled', true);
-        }
-        saveSpkCreateDraft();
-    });
-
+    // Customer mengikuti pemilik kendaraan yang dipilih
     $('#vehicle_id').on('change', function() {
         const selected = $('#vehicle_id option:selected');
         const customerId = selected.data('customer-id') || '';
@@ -548,7 +529,7 @@ $(document).ready(function() {
     });
 });
 
-function loadAllVehiclesForFilter() {
+function loadVehicleOptions() {
     const prevValue = $('#vehicleFilter').val() || '';
 
     $.ajax({
@@ -559,7 +540,7 @@ function loadAllVehiclesForFilter() {
             if (response.success) {
                 let options = '<option value="">Semua Kendaraan</option>';
                 response.data.forEach(function(v) {
-                    options += `<option value="${v.id}">${v.customer_name} - ${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</option>`;
+                    options += `<option value="${v.id}">${v.customer_name} - ${v.customer_phone || '-'} - ${v.nomor_polisi} - ${v.model || v.merk || 'N/A'}</option>`;
                 });
 
                 // Prevent duplicate Select2 wrappers on reload.
@@ -581,6 +562,8 @@ function loadAllVehiclesForFilter() {
                         width: '100%'
                     });
                 }
+
+                renderVehicleCreateOptions(response.data);
             }
         }
     });
@@ -606,59 +589,47 @@ function loadSPKs() {
     });
 }
 
-function loadCustomers() {
-    $.ajax({
-        url: 'backend.php?action=get_customers',
-        type: 'GET',
-        dataType: 'json',
-        success: function(response) {
-            if (response.success) {
-                let options = '<option value="">-- Pilih Customer --</option>';
-                response.data.forEach(function(c) {
-                    const customerGroupValue = c.customer_ids || c.id;
-                    options += `<option value="${customerGroupValue}">${c.name} ${c.phone ? '(' + c.phone + ')' : ''}</option>`;
-                });
-                $('#customer_id').html(options);
-
-                if ($.fn.select2) {
-                    if ($('#customer_id').hasClass('select2-hidden-accessible')) {
-                        $('#customer_id').select2('destroy');
-                    }
-                    $('#customer_id').select2({
-                        theme: 'bootstrap-5',
-                        placeholder: 'Cari customer...',
-                        allowClear: true,
-                        width: '100%',
-                        dropdownParent: $('#spkModal')
-                    });
-                }
-            }
-        }
+// Satu pilihan berbasis kendaraan: "Nama - No. Telp - No. Plat". Customer mengikuti pemilik kendaraan.
+function renderVehicleCreateOptions(vehicles) {
+    const prevValue = $('#vehicle_id').val() || '';
+    let options = '<option value="">-- Cari nama, no. telp, atau no. plat --</option>';
+    vehicles.forEach(function(v) {
+        options += `<option value="${v.id}" data-customer-id="${v.customer_id}">${v.customer_name} - ${v.customer_phone || '-'} - ${v.nomor_polisi}</option>`;
     });
-}
 
-function loadVehicles(customerIds, selectedVehicleId = '') {
-    $.ajax({
-        url: 'backend.php?action=get_vehicles&customer_ids=' + encodeURIComponent(customerIds),
-        type: 'GET',
-        dataType: 'json',
-        success: function(response) {
-            if (response.success) {
-                let options = '<option value="">-- Pilih Kendaraan --</option>';
-                response.data.forEach(function(v) {
-                    options += `<option value="${v.id}" data-customer-id="${v.customer_id}">${v.nomor_polisi} - ${v.merk} ${v.model || ''}</option>`;
-                });
-                $('#vehicle_id').html(options).prop('disabled', false);
+    // Prevent duplicate Select2 wrappers on reload.
+    if ($.fn.select2 && $('#vehicle_id').hasClass('select2-hidden-accessible')) {
+        $('#vehicle_id').select2('destroy');
+    }
 
-                if (selectedVehicleId) {
-                    $('#vehicle_id').val(String(selectedVehicleId));
-                    const selected = $('#vehicle_id option:selected');
-                    const customerId = selected.data('customer-id') || '';
-                    $('#customer_id_real').val(customerId);
+    $('#vehicle_id').html(options);
+    if (prevValue) {
+        $('#vehicle_id').val(prevValue);
+    }
+
+    if ($.fn.select2) {
+        $('#vehicle_id').select2({
+            theme: 'bootstrap-5',
+            placeholder: 'Cari nama, no. telp, atau no. plat...',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: $('#spkModal'),
+            // Abaikan spasi/strip supaya "L1234AB" tetap menemukan "L 1234 AB".
+            matcher: function(params, data) {
+                const term = $.trim(params.term || '');
+                if (term === '') {
+                    return data;
                 }
+                if (typeof data.text === 'undefined') {
+                    return null;
+                }
+                const normalize = function(s) {
+                    return String(s).toLowerCase().replace(/[\s-]+/g, '');
+                };
+                return normalize(data.text).indexOf(normalize(term)) > -1 ? data : null;
             }
-        }
-    });
+        });
+    }
 }
 
 function displaySPKs(spks) {
@@ -794,10 +765,9 @@ function openAddModal() {
         $('#spkForm')[0].reset();
         $('#tanggal').val(new Date().toISOString().split('T')[0]);
         $('#customer_id_real').val('');
-        $('#vehicle_id').html('<option value="">-- Pilih Customer Dulu --</option>').prop('disabled', true);
 
-        if ($.fn.select2 && $('#customer_id').hasClass('select2-hidden-accessible')) {
-            $('#customer_id').val('').trigger('change');
+        if ($.fn.select2 && $('#vehicle_id').hasClass('select2-hidden-accessible')) {
+            $('#vehicle_id').val('').trigger('change');
         }
 
         tryRestoreSpkCreateDraft();
@@ -1190,8 +1160,6 @@ function showAlert(type, message) {
 
 function buildSpkCreateDraftPayload() {
     return {
-        customer_group: $('#customer_id').val() || '',
-        customer_id_real: $('#customer_id_real').val() || '',
         vehicle_id: $('#vehicle_id').val() || '',
         tanggal: $('#tanggal').val() || '',
         keluhan_customer: $('#keluhan_customer').val() || '',
@@ -1242,13 +1210,9 @@ function tryRestoreSpkCreateDraft() {
         $('#keluhan_customer').val(draft.keluhan_customer);
     }
 
-    if (draft.customer_group) {
-        $('#customer_id').val(draft.customer_group).trigger('change');
-        loadVehicles(draft.customer_group, draft.vehicle_id || '');
-    }
-
-    if (draft.customer_id_real) {
-        $('#customer_id_real').val(draft.customer_id_real);
+    if (draft.vehicle_id) {
+        // Change handler mengisi ulang customer dari pemilik kendaraan.
+        $('#vehicle_id').val(String(draft.vehicle_id)).trigger('change');
     }
 
     showAlert('info', 'Draft SPK terakhir dipulihkan.');
