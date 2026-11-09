@@ -77,7 +77,7 @@ function ensure_payment_approval_columns(mysqli $conn): void {
         'approved_at' => "ALTER TABLE payments ADD COLUMN approved_at DATETIME NULL AFTER approved_by",
         'pending_amount' => "ALTER TABLE payments ADD COLUMN pending_amount DECIMAL(14,2) NULL AFTER approved_at",
         'pending_tanggal' => "ALTER TABLE payments ADD COLUMN pending_tanggal DATE NULL AFTER pending_amount",
-        'pending_method' => "ALTER TABLE payments ADD COLUMN pending_method ENUM('cash','transfer') NULL AFTER pending_tanggal",
+        'pending_method' => "ALTER TABLE payments ADD COLUMN pending_method ENUM('cash','transfer','qris') NULL AFTER pending_tanggal",
         'pending_note' => "ALTER TABLE payments ADD COLUMN pending_note TEXT NULL AFTER pending_method",
     ];
 
@@ -557,7 +557,12 @@ elseif ($action === 'create_payment') {
     $method = mysqli_real_escape_string($conn, $_POST['payment_method']);
     $note = mysqli_real_escape_string($conn, $_POST['notes'] ?? '');
 
-    $accountCode = ($method === 'cash') ? 'cash' : 'bank';
+    if (!in_array($method, PAYMENT_METHODS, true)) {
+        echo json_encode(['success' => false, 'message' => 'Metode pembayaran tidak valid']);
+        exit;
+    }
+
+    $accountCode = finance_account_code_for_method($method);
     
     if ($amount <= 0) {
         echo json_encode(['success' => false, 'message' => 'Jumlah pembayaran harus lebih dari 0']);
@@ -727,7 +732,12 @@ elseif ($action === 'edit_payment') {
     $tanggal = $_POST['payment_date'];
     $method = mysqli_real_escape_string($conn, $_POST['payment_method']);
     $note = mysqli_real_escape_string($conn, $_POST['notes'] ?? '');
-    
+
+    if (!in_array($method, PAYMENT_METHODS, true)) {
+        echo json_encode(['success' => false, 'message' => 'Metode pembayaran tidak valid']);
+        exit;
+    }
+
     if ($new_amount <= 0) {
         echo json_encode(['success' => false, 'message' => 'Jumlah pembayaran harus lebih dari 0']);
         exit;
@@ -805,7 +815,7 @@ elseif ($action === 'edit_payment') {
             }
         }
 
-        $accountCode = ($method === 'cash') ? 'cash' : 'bank';
+        $accountCode = finance_account_code_for_method($method);
         $account = finance_get_account_by_code($conn, $accountCode);
         if (!$account) {
             throw new Exception('Akun keuangan tidak ditemukan');

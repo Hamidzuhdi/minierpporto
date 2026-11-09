@@ -131,6 +131,7 @@ include '../header.php';
                             <option value="">-- Pilih Metode --</option>
                             <option value="cash">Cash / Tunai</option>
                             <option value="transfer">Rekening / Transfer</option>
+                            <option value="qris">QRIS</option>
                         </select>
                         <small class="text-muted">
                             <i class="fas fa-info-circle"></i> Pembayaran rekening akan tersimpan sebagai transfer di sistem
@@ -188,6 +189,7 @@ include '../header.php';
                             <option value="">-- Pilih Metode --</option>
                             <option value="cash">Cash / Tunai</option>
                             <option value="transfer">Rekening / Transfer</option>
+                            <option value="qris">QRIS</option>
                         </select>
                     </div>
                     
@@ -451,7 +453,7 @@ function displayInvoiceDetail(inv) {
             if (pay.updated_at && pay.updated_at !== pay.created_at) {
                 updatedAtDisplay = formatDateTime(pay.updated_at);
             }
-            const methodLabel = pay.method === 'cash' ? 'Cash / Tunai' : 'Rekening / Transfer';
+            const methodLabel = {cash: 'Cash / Tunai', transfer: 'Rekening / Transfer', qris: 'QRIS'}[pay.method] || pay.method;
             
             const approvalStatus = pay.approval_status || 'approved';
             const statusBadge = (approvalStatus === 'approved')

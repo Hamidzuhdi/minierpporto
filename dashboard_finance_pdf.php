@@ -126,7 +126,8 @@ $opl_laba_part = (float)mysqli_fetch_assoc(mysqli_query($conn, $qOplLabaPart))['
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
-$saldo_akhir = (float)($cashAcc['current_balance'] ?? 0) + (float)($bankAcc['current_balance'] ?? 0);
+$qrisAcc = finance_get_account_by_code($conn, 'qris');
+$saldo_akhir = (float)($cashAcc['current_balance'] ?? 0) + (float)($bankAcc['current_balance'] ?? 0) + (float)($qrisAcc['current_balance'] ?? 0);
 
 $qTopOps = "SELECT ft.category, COALESCE(ec.name, ft.category) as category_name, SUM(ft.amount) total_out
             FROM finance_transactions ft
@@ -212,7 +213,7 @@ th { background: #f5f5f5; text-align: left; }
     <div class="summary-row"><span class="summary-title">Laba OPL Jasa</span><span class="summary-value">' . rupiah($opl_laba_jasa) . '</span></div>
     <div class="summary-row"><span class="summary-title">Laba OPL Part</span><span class="summary-value">' . rupiah($opl_laba_part) . '</span></div>
     <div class="summary-row"><span class="summary-detail">Ditagih ke customer dikurangi dibayar ke pihak ketiga (kategori OPL JASA/OPL PART), di luar Net Profit di atas</span></div>
-    <div class="summary-row"><span class="summary-title">Saldo Akhir (Cash + Bank)</span><span class="summary-value">' . rupiah($saldo_akhir) . '</span></div>
+    <div class="summary-row"><span class="summary-title">Saldo Akhir (Cash + Bank + QRIS)</span><span class="summary-value">' . rupiah($saldo_akhir) . '</span></div>
 </div>
 
 <div class="section-title">Top Kategori Pengeluaran</div>

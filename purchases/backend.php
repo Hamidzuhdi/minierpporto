@@ -267,7 +267,10 @@ elseif ($action === 'get_finance_accounts') {
     $result = mysqli_query($conn, "SELECT id, code, name, current_balance FROM finance_accounts WHERE is_active = 1 ORDER BY id ASC");
     $accounts = [];
     while ($row = mysqli_fetch_assoc($result)) {
-        $accounts[] = $row;
+        // Saldo QRIS tidak dipakai bayar PO (dipindah ke Rekening dulu).
+        if (finance_account_can_spend($row['code'])) {
+            $accounts[] = $row;
+        }
     }
 
     echo json_encode(['success' => true, 'data' => $accounts]);
@@ -480,6 +483,9 @@ elseif ($action === 'update_payment') {
             $account = finance_get_account_by_code($conn, $payment_account_code);
             if (!$account) {
                 throw new Exception('Akun pembayaran tidak valid');
+            }
+            if (!finance_account_can_spend($payment_account_code)) {
+                throw new Exception('Saldo QRIS tidak bisa dipakai untuk bayar PO. Pindahkan dulu ke Rekening lewat Transfer Antar Akun.');
             }
 
             $tx = finance_add_transaction(

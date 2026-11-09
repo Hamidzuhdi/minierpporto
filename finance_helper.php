@@ -174,6 +174,55 @@ function finance_ensure_default_accounts(mysqli $conn): void
         SELECT 'EXP-ATK', 'ATK & Kertas Nota', 'Pembelian alat tulis kantor dan nota', 0, 1
         WHERE NOT EXISTS (SELECT 1 FROM expense_categories WHERE code = 'EXP-ATK')
     ");
+
+    mysqli_query($conn, "
+        INSERT INTO finance_accounts (code, name, opening_balance, current_balance, is_active)
+        SELECT 'qris', 'Saldo QRIS', 0, 0, 1
+        WHERE NOT EXISTS (SELECT 1 FROM finance_accounts WHERE code = 'qris')
+    ");
+
+    finance_ensure_qris_payment_method($conn);
+}
+
+// Metode pembayaran customer yang dikenal (kolom payments.method).
+const PAYMENT_METHODS = ['cash', 'transfer', 'qris'];
+
+// Akun yang tidak boleh jadi sumber pengeluaran langsung (bayar PO / biaya operasional).
+// Saldo QRIS harus dipindahkan ke Rekening terlebih dulu lewat Transfer Antar Akun.
+const FINANCE_NON_SPEND_ACCOUNT_CODES = ['qris'];
+
+function finance_account_can_spend(string $accountCode): bool
+{
+    return !in_array($accountCode, FINANCE_NON_SPEND_ACCOUNT_CODES, true);
+}
+
+// Metode pembayaran customer -> kode akun yang menampung uangnya.
+function finance_account_code_for_method(string $method): string
+{
+    if ($method === 'cash') {
+        return 'cash';
+    }
+    if ($method === 'qris') {
+        return 'qris';
+    }
+    return 'bank';
+}
+
+// Pastikan kolom metode pembayaran di tabel payments menerima 'qris'.
+function finance_ensure_qris_payment_method(mysqli $conn): void
+{
+    $columns = [
+        'method' => "ENUM('cash','transfer','qris') DEFAULT 'transfer'",
+        'pending_method' => "ENUM('cash','transfer','qris') NULL",
+    ];
+
+    foreach ($columns as $column => $definition) {
+        $res = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE '$column'");
+        $col = $res ? mysqli_fetch_assoc($res) : null;
+        if ($col && stripos((string)($col['Type'] ?? ''), "'qris'") === false) {
+            mysqli_query($conn, "ALTER TABLE payments MODIFY COLUMN $column $definition");
+        }
+    }
 }
 
 function finance_get_account_by_code(mysqli $conn, string $code): ?array
@@ -303,7 +352,12 @@ function finance_reverse_transaction(mysqli $conn, int $transactionId): array
             : ((float)$account['current_balance'] - $amount);
 
         if ($newBalance < 0) {
-            return ['success' => false, 'message' => 'Saldo tidak valid saat reverse transaksi'];
+            return [
+                'success' => false,
+                'message' => 'Akun ' . $account['name'] . ' tidak cukup untuk membalik transaksi ini (saldo Rp '
+                    . number_format((float)$account['current_balance'], 0, ',', '.') . ', dibutuhkan Rp '
+                    . number_format($amount, 0, ',', '.') . '). Pindahkan saldo terlebih dulu.',
+            ];
         }
 
         if (!mysqli_query($conn, "UPDATE finance_accounts SET current_balance = $newBalance WHERE id = {$tx['account_id']}")) {

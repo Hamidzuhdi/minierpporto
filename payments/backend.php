@@ -25,6 +25,7 @@ if ($action === 'get_accounts') {
     $res = mysqli_query($conn, "SELECT id, code, name, opening_balance, current_balance FROM finance_accounts WHERE is_active = 1 ORDER BY id ASC");
     $rows = [];
     while ($r = mysqli_fetch_assoc($res)) {
+        $r['can_spend'] = finance_account_can_spend($r['code']) ? 1 : 0;
         $rows[] = $r;
     }
     echo json_encode(['success' => true, 'data' => $rows]);
@@ -157,6 +158,7 @@ elseif ($action === 'toggle_expense_category_status') {
 elseif ($action === 'summary') {
     $cash = finance_get_account_by_code($conn, 'cash');
     $bank = finance_get_account_by_code($conn, 'bank');
+    $qris = finance_get_account_by_code($conn, 'qris');
 
     $today = date('Y-m-d');
     $month = date('Y-m');
@@ -171,7 +173,8 @@ elseif ($action === 'summary') {
         'data' => [
             'cash_balance' => (float)($cash['current_balance'] ?? 0),
             'bank_balance' => (float)($bank['current_balance'] ?? 0),
-            'total_balance' => (float)($cash['current_balance'] ?? 0) + (float)($bank['current_balance'] ?? 0),
+            'qris_balance' => (float)($qris['current_balance'] ?? 0),
+            'total_balance' => (float)($cash['current_balance'] ?? 0) + (float)($bank['current_balance'] ?? 0) + (float)($qris['current_balance'] ?? 0),
             'today_in' => (float)mysqli_fetch_assoc($qTodayIn)['total'],
             'today_out' => (float)mysqli_fetch_assoc($qTodayOut)['total'],
             'month_in' => (float)mysqli_fetch_assoc($qMonthIn)['total'],
@@ -574,6 +577,10 @@ elseif ($action === 'create_operational_expense') {
     $account = finance_get_account_by_code($conn, $accountCode);
     if (!$account) {
         echo json_encode(['success' => false, 'message' => 'Akun sumber dana tidak valid']);
+        exit;
+    }
+    if (!finance_account_can_spend($accountCode)) {
+        echo json_encode(['success' => false, 'message' => 'Saldo QRIS tidak bisa dipakai untuk pengeluaran. Pindahkan dulu ke Rekening lewat Transfer Antar Akun.']);
         exit;
     }
 

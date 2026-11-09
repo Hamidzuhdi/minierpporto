@@ -138,7 +138,8 @@ $net_profit = $laba_bersih_sebelum_zakat - $zakat;
 
 $cashAcc = finance_get_account_by_code($conn, 'cash');
 $bankAcc = finance_get_account_by_code($conn, 'bank');
-$saldo_akhir = (float)($cashAcc['current_balance'] ?? 0) + (float)($bankAcc['current_balance'] ?? 0);
+$qrisAcc = finance_get_account_by_code($conn, 'qris');
+$saldo_akhir = (float)($cashAcc['current_balance'] ?? 0) + (float)($bankAcc['current_balance'] ?? 0) + (float)($qrisAcc['current_balance'] ?? 0);
 
 // Monthly trend (last 12 months)
 $chart_months = [];

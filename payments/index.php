@@ -39,7 +39,7 @@ include '../header.php';
     </div>
 
     <div class="row g-3 mb-4">
-        <div class="col-md-3">
+        <div class="col-6 col-md">
             <div class="card border-0 shadow-sm summary-card-clickable" id="cashSummaryCard" onclick="openAccountExpenseModal('cash', 'Saldo Cash')">
                 <div class="card-body">
                     <small>Saldo Cash</small>
@@ -48,7 +48,7 @@ include '../header.php';
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md">
             <div class="card border-0 shadow-sm summary-card-clickable" id="bankSummaryCard" onclick="openAccountExpenseModal('bank', 'Saldo Rekening')">
                 <div class="card-body">
                     <small>Saldo Rekening</small>
@@ -57,8 +57,17 @@ include '../header.php';
                 </div>
             </div>
         </div>
-        <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Total Saldo</small><h5 id="sumTotal">Rp 0</h5></div></div></div>
-        <div class="col-md-3"><div class="card border-0 shadow-sm"><div class="card-body"><small>Cashflow Bulan Ini</small><h5 id="sumMonthFlow">Rp 0</h5></div></div></div>
+        <div class="col-6 col-md">
+            <div class="card border-0 shadow-sm summary-card-clickable" id="qrisSummaryCard" onclick="openAccountExpenseModal('qris', 'Saldo QRIS')">
+                <div class="card-body">
+                    <small>Saldo QRIS</small>
+                    <h5 id="sumQris">Rp 0</h5>
+                    <small class="text-muted">Klik untuk lihat detail mutasi</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md"><div class="card border-0 shadow-sm"><div class="card-body"><small>Total Saldo</small><h5 id="sumTotal">Rp 0</h5></div></div></div>
+        <div class="col-6 col-md"><div class="card border-0 shadow-sm"><div class="card-body"><small>Cashflow Bulan Ini</small><h5 id="sumMonthFlow">Rp 0</h5></div></div></div>
     </div>
 
     <?php if ($user_role === 'Owner'): ?>
@@ -671,18 +680,23 @@ function loadAccounts(){
     $.getJSON('backend.php?action=get_accounts', function(res){
         if (!res.success) return;
         let op = '<option value="">-- Pilih --</option>';
+        let ic = '<option value="">-- Pilih --</option>';
         let tfFrom = '<option value="">-- Pilih --</option>';
         let tfTo = '<option value="">-- Pilih --</option>';
         let filter = '<option value="">Semua Akun</option>';
         res.data.forEach(function(a){
             const label = a.name + ' (Saldo: ' + fmt(a.current_balance) + ')';
-            op += `<option value="${a.code}">${label}</option>`;
+            // Sumber pengeluaran tidak mencakup akun yang saldonya harus dipindah dulu (mis. QRIS).
+            if (parseInt(a.can_spend, 10) !== 0) {
+                op += `<option value="${a.code}">${label}</option>`;
+            }
+            ic += `<option value="${a.code}">${label}</option>`;
             tfFrom += `<option value="${a.code}">${label}</option>`;
             tfTo += `<option value="${a.code}">${label}</option>`;
             filter += `<option value="${a.code}">${a.name}</option>`;
         });
         $('#op_account').html(op);
-        $('#ic_account').html(op);
+        $('#ic_account').html(ic);
         $('#tf_from').html(tfFrom);
         $('#tf_to').html(tfTo);
         $('#f_account').html(filter);
@@ -962,6 +976,7 @@ function loadSummary(){
         const d = res.data;
         $('#sumCash').text(fmt(d.cash_balance));
         $('#sumBank').text(fmt(d.bank_balance));
+        $('#sumQris').text(fmt(d.qris_balance));
         $('#sumTotal').text(fmt(d.total_balance));
         $('#sumMonthFlow').text(fmt(d.month_in - d.month_out));
     });
