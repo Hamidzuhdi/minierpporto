@@ -325,6 +325,7 @@ elseif ($action === 'read') {
     $vehicle_id = $_GET['vehicle_id'] ?? '';
     $discount_flow = $_GET['discount_flow'] ?? '';
     $revision_filter = $_GET['revision_filter'] ?? '';
+    $month = $_GET['month'] ?? '';
     
     $sql = "SELECT s.*, 
             c.name as customer_name, c.phone as customer_phone,
@@ -365,6 +366,12 @@ elseif ($action === 'read') {
         }
     }
     
+    // Filter bulan pembuatan SPK (created_at)
+    if (!empty($month) && preg_match('/^\d{4}-\d{2}$/', $month)) {
+        $month = mysqli_real_escape_string($conn, $month);
+        $conditions[] = "DATE_FORMAT(s.created_at, '%Y-%m') = '$month'";
+    }
+
     // Filter untuk revision
     if (!empty($revision_filter)) {
         if ($revision_filter === 'revisions') {

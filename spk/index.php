@@ -109,12 +109,21 @@ $can_dp = in_array($user_role, ['Owner', 'Admin'], true);
                         </div>
                     </div>
                     <div class="row mb-3">
-                        <div class="col-12">
+                        <div class="col-md-9">
                             <select class="form-select" id="revisionFilter">
                                 <option value="">Semua SPK</option>
                                 <option value="revisions">Hanya Revisi (SPK-REV1, REV2, dst)</option>
                                 <option value="has_revisions">SPK yang Sudah Memiliki Revisi</option>
                             </select>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-calendar-alt"></i></span>
+                                <input type="month" class="form-control" id="monthFilter" title="Filter berdasarkan bulan SPK dibuat">
+                                <button class="btn btn-outline-secondary" type="button" id="btnClearMonthFilter" title="Tampilkan semua bulan">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="table-responsive">
@@ -579,6 +588,11 @@ $(document).ready(function() {
     $('#vehicleFilter').on('change', loadSPKs);
     $('#discountFlowFilter').on('change', loadSPKs);
     $('#revisionFilter').on('change', loadSPKs);
+    $('#monthFilter').on('change', loadSPKs);
+    $('#btnClearMonthFilter').on('click', function() {
+        $('#monthFilter').val('');
+        loadSPKs();
+    });
     $('#discount_amount_requested').on('input', refreshEstimasiBiaya);
     $('#kilometer').on('input', function() {
         this.value = formatKilometerInput(this.value);
@@ -662,9 +676,10 @@ function loadSPKs() {
     let vehicleId = $('#vehicleFilter').val();
     let discountFlow = $('#discountFlowFilter').val();
     let revisionFilter = $('#revisionFilter').val();
-    
+    let month = $('#monthFilter').val();
+
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId) + '&discount_flow=' + encodeURIComponent(discountFlow) + '&revision_filter=' + encodeURIComponent(revisionFilter) + '&t=' + Date.now(),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&vehicle_id=' + encodeURIComponent(vehicleId) + '&discount_flow=' + encodeURIComponent(discountFlow) + '&revision_filter=' + encodeURIComponent(revisionFilter) + '&month=' + encodeURIComponent(month) + '&t=' + Date.now(),
         type: 'GET',
         dataType: 'json',
         cache: false,
