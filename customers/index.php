@@ -233,18 +233,18 @@ $reminder_from_query = ($reminder_param === '2months') ? '1' : (in_array($remind
                     <div class="mb-3">
                         <label class="form-label">Hasil Follow-up *</label>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="hasil" id="hasil_tidak_jawab" value="tidak_jawab" required>
-                            <label class="form-check-label" for="hasil_tidak_jawab">Tidak jawab</label>
+                            <input class="form-check-input" type="radio" name="hasil" id="hasil_no_respon" value="no_respon" required>
+                            <label class="form-check-label" for="hasil_no_respon">No respon</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="hasil" id="hasil_jawab" value="jawab">
-                            <label class="form-check-label" for="hasil_jawab">Jawab</label>
+                            <input class="form-check-input" type="radio" name="hasil" id="hasil_respon" value="respon">
+                            <label class="form-check-label" for="hasil_respon">Respon</label>
                         </div>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="hasil" id="hasil_jawab_lanjut" value="jawab_lanjut">
-                            <label class="form-check-label" for="hasil_jawab_lanjut">Jawab dan lanjut</label>
+                            <input class="form-check-input" type="radio" name="hasil" id="hasil_prospek" value="prospek">
+                            <label class="form-check-label" for="hasil_prospek">Prospek</label>
                         </div>
-                        <small class="text-muted">"Tidak jawab" tetap muncul di daftar reminder; "Jawab" dan "Jawab dan lanjut" mengeluarkan customer dari tahap ini.</small>
+                        <small class="text-muted">"No respon" tetap muncul di daftar reminder; "Respon" dan "Prospek" mengeluarkan customer dari tahap ini.</small>
                     </div>
 
                     <div class="mb-3">
@@ -272,9 +272,9 @@ const reminderFromQuery = '<?php echo $reminder_from_query; ?>';
 const FOLLOWUP_TAHAP_BY_FILTER = {'7days': '7days', '1': '2months', '6months': '6months'};
 const FOLLOWUP_TAHAP_LABEL = {'7days': '7 Hari', '2months': '2 Bulan', '6months': '6 Bulan'};
 const FOLLOWUP_HASIL_BADGE = {
-    tidak_jawab: ['warning text-dark', 'Tidak jawab'],
-    jawab: ['info', 'Jawab'],
-    jawab_lanjut: ['success', 'Jawab dan lanjut']
+    no_respon: ['warning text-dark', 'No respon'],
+    respon: ['info', 'Respon'],
+    prospek: ['success', 'Prospek']
 };
 let customerRows = {};
 let currentDetailCustomerId = null;
@@ -341,7 +341,7 @@ function displayCustomers(customers) {
             if (followupTahap) {
                 const attempts = parseInt(customer.fu_attempts) || 0;
                 const followupStatus = attempts > 0
-                    ? `<span class="badge bg-warning text-dark">Tidak jawab ${attempts}x</span><br><small class="text-muted">terakhir ${formatDate(customer.fu_last_at)}</small>`
+                    ? `<span class="badge bg-warning text-dark">No respon ${attempts}x</span><br><small class="text-muted">terakhir ${formatDate(customer.fu_last_at)}</small>`
                     : '<span class="badge bg-light text-dark border">Belum di-follow-up</span>';
                 followupCell = `${followupStatus}<br>
                     <button class="btn btn-success btn-sm mt-1" onclick="openFollowupModal(${customer.id})" title="Catat hasil follow-up">

@@ -9,7 +9,7 @@ const FOLLOWUP_TAHAP_INTERVAL = [
     '6months' => '6 MONTH',
 ];
 
-const FOLLOWUP_HASIL = ['tidak_jawab', 'jawab', 'jawab_lanjut'];
+const FOLLOWUP_HASIL = ['no_respon', 'respon', 'prospek'];
 
 function followup_ensure_table(mysqli $conn): void
 {
@@ -19,7 +19,7 @@ function followup_ensure_table(mysqli $conn): void
             customer_id INT NOT NULL,
             spk_id INT NULL,
             tahap ENUM('7days','2months','6months') NOT NULL,
-            hasil ENUM('tidak_jawab','jawab','jawab_lanjut') NOT NULL,
+            hasil ENUM('no_respon','respon','prospek') NOT NULL,
             note TEXT NULL,
             created_by INT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -28,6 +28,31 @@ function followup_ensure_table(mysqli $conn): void
             CONSTRAINT fk_followup_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     ");
+
+    followup_ensure_hasil_values($conn);
+}
+
+// Nama hasil lama (tidak_jawab / jawab / jawab_lanjut) diganti menjadi no_respon / respon / prospek.
+// Tabel yang sudah terlanjur dibuat dengan nama lama dimigrasikan beserta datanya.
+function followup_ensure_hasil_values(mysqli $conn): void
+{
+    $res = mysqli_query($conn, "SHOW COLUMNS FROM customer_followups LIKE 'hasil'");
+    $col = $res ? mysqli_fetch_assoc($res) : null;
+    if (!$col || stripos((string)($col['Type'] ?? ''), "'tidak_jawab'") === false) {
+        return;
+    }
+
+    mysqli_query($conn, "ALTER TABLE customer_followups MODIFY COLUMN hasil ENUM('tidak_jawab','jawab','jawab_lanjut','no_respon','respon','prospek') NOT NULL");
+    mysqli_query($conn, "
+        UPDATE customer_followups
+        SET hasil = CASE hasil
+            WHEN 'tidak_jawab' THEN 'no_respon'
+            WHEN 'jawab' THEN 'respon'
+            WHEN 'jawab_lanjut' THEN 'prospek'
+            ELSE hasil
+        END
+    ");
+    mysqli_query($conn, "ALTER TABLE customer_followups MODIFY COLUMN hasil ENUM('no_respon','respon','prospek') NOT NULL");
 }
 
 // Nilai filter reminder di halaman Customers (7days | 1 / 2months | 6months) -> tahap follow-up.
@@ -62,7 +87,7 @@ function followup_last_spk_sql(): string
 }
 
 // Kondisi WHERE: SPK terakhir sudah melewati tahap, dan customer belum menjawab follow-up tahap itu.
-// "Tidak jawab" tetap masuk daftar (perlu dicoba lagi); "jawab" / "jawab lanjut" mengeluarkannya.
+// "No respon" tetap masuk daftar (perlu dicoba lagi); "respon" / "prospek" mengeluarkannya.
 function followup_due_condition_sql(string $tahap, string $lastSpkAlias = 'ls'): string
 {
     $interval = FOLLOWUP_TAHAP_INTERVAL[$tahap];
@@ -71,7 +96,7 @@ function followup_due_condition_sql(string $tahap, string $lastSpkAlias = 'ls'):
                 SELECT 1 FROM customer_followups f
                 WHERE f.spk_id = $lastSpkAlias.last_spk_id
                   AND f.tahap = '$tahap'
-                  AND f.hasil IN ('jawab', 'jawab_lanjut')
+                  AND f.hasil IN ('respon', 'prospek')
             )";
 }
 
