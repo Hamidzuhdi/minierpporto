@@ -371,11 +371,16 @@ if ($is_owner) {
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card border-0 shadow-sm bg-danger text-white h-100">
+            <div class="card border-0 shadow-sm bg-danger text-white h-100 cursor-pointer" onclick="openHutangModal()" title="Klik untuk download data">
                 <div class="card-body">
-                    <h6 class="mb-2">Total Hutang PO</h6>
-                    <h3 class="mb-0">Rp <?php echo number_format($hutang, 0, ',', '.'); ?></h3>
-                    <small>Purchase Belum Paid</small>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-2">Total Hutang PO</h6>
+                            <h3 class="mb-0">Rp <?php echo number_format($hutang, 0, ',', '.'); ?></h3>
+                            <small>Purchase Belum Paid</small>
+                        </div>
+                        <div class="text-white"><i class="fas fa-download"></i></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -957,6 +962,41 @@ if ($is_owner) {
     </div>
 </div>
 
+<!-- 3b. Modal Export Hutang PO -->
+<div class="modal fade" id="hutangModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Hutang PO</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-3">
+                    Daftar purchase yang belum dibayar dan belum di-refund (sama dengan angka Total Hutang PO),
+                    beserta rekap per supplier.
+                </p>
+                <div class="mb-3">
+                    <label class="form-label">Tanggal PO <small class="text-muted">(opsional, kosongkan untuk semua)</small></label>
+                    <div class="row g-2">
+                        <div class="col">
+                            <input type="date" id="hutangFromDate" class="form-control">
+                        </div>
+                        <div class="col">
+                            <input type="date" id="hutangToDate" class="form-control">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-primary" onclick="exportHutangPo()">
+                    <i class="fas fa-download"></i> Download Excel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 4. Modal SPK Monthly Entry -->
 <div class="modal fade" id="spkMonthlyModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -1164,6 +1204,21 @@ function loadHppDetail() {
 
 function openPiutangModal() {
     new bootstrap.Modal(document.getElementById('piutangModal')).show();
+}
+
+function openHutangModal() {
+    new bootstrap.Modal(document.getElementById('hutangModal')).show();
+}
+
+function exportHutangPo() {
+    const dateFrom = document.getElementById('hutangFromDate').value;
+    const dateTo = document.getElementById('hutangToDate').value;
+
+    // Close modal
+    bootstrap.Modal.getInstance(document.getElementById('hutangModal')).hide();
+
+    // Trigger download (tanggal kosong = semua)
+    window.location.href = `dashboard_export.php?action=get_hutang_po&export_type=excel&date_from=${dateFrom}&date_to=${dateTo}`;
 }
 
 // Export functions

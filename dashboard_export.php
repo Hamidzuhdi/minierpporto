@@ -220,6 +220,54 @@ elseif ($action === 'get_spk_monthly') {
     }
 }
 
+// ===== 5. HUTANG PO (PURCHASE BELUM DIBAYAR) =====
+elseif ($action === 'get_hutang_po') {
+    if (($_SESSION['role'] ?? '') !== 'Owner') {
+        echo json_encode(['success' => false, 'message' => 'Hanya Owner yang dapat mengunduh hutang PO']);
+        exit;
+    }
+
+    // Definisi hutang sama dengan kartu "Total Hutang PO" di dashboard: belum dibayar dan belum di-refund.
+    // Periode (tanggal PO) opsional; kosong = semua.
+    $conditions = ["p.is_paid = 'Belum Bayar'", "p.status <> 'Refund'"];
+    $date_from = trim($_GET['date_from'] ?? '');
+    $date_to = trim($_GET['date_to'] ?? '');
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) {
+        $conditions[] = "p.tanggal >= '" . mysqli_real_escape_string($conn, $date_from) . "'";
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_to)) {
+        $conditions[] = "p.tanggal <= '" . mysqli_real_escape_string($conn, $date_to) . "'";
+    }
+
+    $sql = "SELECT
+                p.id as po_id,
+                DATE_FORMAT(p.tanggal, '%d-%m-%Y') as tanggal,
+                p.supplier,
+                COALESCE(pi.item_count, 0) as jumlah_item,
+                p.total,
+                p.status,
+                u.username as dibuat_oleh,
+                DATEDIFF(CURDATE(), p.tanggal) as umur_hari
+            FROM purchases p
+            LEFT JOIN users u ON u.id = p.created_by
+            LEFT JOIN (SELECT purchase_id, COUNT(*) as item_count FROM purchase_items GROUP BY purchase_id) pi ON pi.purchase_id = p.id
+            WHERE " . implode(' AND ', $conditions) . "
+            ORDER BY p.tanggal ASC, p.id ASC";
+
+    $result = mysqli_query($conn, $sql);
+    $data = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        $data[] = $row;
+    }
+
+    if ($export_type === 'excel') {
+        exportHutangPoExcel($data);
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'data' => $data]);
+    }
+}
+
 // ===== HELPER FUNCTIONS =====
 
 function exportToExcel($data, $sheet_name, $file_prefix, $columns) {
@@ -393,13 +441,36 @@ function exportPiutangAktifExcel($data) {
         ];
     }
 
+    xlsxSendWorkbook(
+        sanitizeFilename('piutang_aktif_' . date('YmdHis') . '.xlsx'),
+        [
+            ['name' => 'Detail Invoice', 'rows' => $sheet1Rows, 'widths' => [10, 16, 12, 24, 15, 15, 15, 14]],
+            ['name' => 'Rekap per Customer', 'rows' => $sheet2Rows, 'widths' => [26, 14, 16]],
+        ]
+    );
+}
+
+// Kemas sheet-sheet menjadi 1 file .xlsx asli (Office Open XML, dibangun via ZipArchive bawaan PHP)
+// lalu kirim sebagai download. $sheets: [['name' => ..., 'rows' => ..., 'widths' => [...]], ...]
+// Gaya sel: 1 = header (tebal, abu-abu), 2 = format rupiah.
+function xlsxSendWorkbook($filename, $sheets) {
+    $sheetOverrides = '';
+    $sheetRels = '';
+    $sheetEntries = '';
+    foreach ($sheets as $i => $sheet) {
+        $n = $i + 1;
+        $sheetOverrides .= '<Override PartName="/xl/worksheets/sheet' . $n . '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+        $sheetRels .= '<Relationship Id="rId' . $n . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' . $n . '.xml"/>';
+        $sheetEntries .= '<sheet name="' . htmlspecialchars($sheet['name'], ENT_QUOTES | ENT_XML1, 'UTF-8') . '" sheetId="' . $n . '" r:id="rId' . $n . '"/>';
+    }
+    $stylesRelId = 'rId' . (count($sheets) + 1);
+
     $contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' .
         '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' .
         '<Default Extension="xml" ContentType="application/xml"/>' .
         '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' .
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' .
-        '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' .
+        $sheetOverrides .
         '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' .
         '</Types>';
 
@@ -410,16 +481,14 @@ function exportPiutangAktifExcel($data) {
 
     $workbookRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
         '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' .
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' .
-        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' .
-        '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' .
+        $sheetRels .
+        '<Relationship Id="' . $stylesRelId . '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' .
         '</Relationships>';
 
     $workbookXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' .
         '<sheets>' .
-        '<sheet name="Detail Invoice" sheetId="1" r:id="rId1"/>' .
-        '<sheet name="Rekap per Customer" sheetId="2" r:id="rId2"/>' .
+        $sheetEntries .
         '</sheets>' .
         '</workbook>';
 
@@ -437,10 +506,6 @@ function exportPiutangAktifExcel($data) {
         '</cellXfs>' .
         '</styleSheet>';
 
-    $sheet1Xml = xlsxBuildSheetXml($sheet1Rows, [10, 16, 12, 24, 15, 15, 15, 14]);
-    $sheet2Xml = xlsxBuildSheetXml($sheet2Rows, [26, 14, 16]);
-
-    $filename = sanitizeFilename('piutang_aktif_' . date('YmdHis') . '.xlsx');
     $tmpPath = tempnam(sys_get_temp_dir(), 'xlsx_');
 
     $zip = new ZipArchive();
@@ -454,8 +519,9 @@ function exportPiutangAktifExcel($data) {
     $zip->addFromString('xl/workbook.xml', $workbookXml);
     $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRelsXml);
     $zip->addFromString('xl/styles.xml', $stylesXml);
-    $zip->addFromString('xl/worksheets/sheet1.xml', $sheet1Xml);
-    $zip->addFromString('xl/worksheets/sheet2.xml', $sheet2Xml);
+    foreach ($sheets as $i => $sheet) {
+        $zip->addFromString('xl/worksheets/sheet' . ($i + 1) . '.xml', xlsxBuildSheetXml($sheet['rows'], $sheet['widths'] ?? []));
+    }
     $zip->close();
 
     header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -466,6 +532,83 @@ function exportPiutangAktifExcel($data) {
     readfile($tmpPath);
     unlink($tmpPath);
     exit;
+}
+
+// Hutang PO: purchase yang belum dibayar. Sheet 1 = detail per PO, sheet 2 = rekap per supplier.
+function exportHutangPoExcel($data) {
+    if (empty($data)) {
+        echo "No data to export";
+        exit;
+    }
+
+    $styleHeader = 1;
+    $styleCurrency = 2;
+
+    $supplierSummary = [];
+    $grandTotal = 0.0;
+    foreach ($data as $row) {
+        $name = trim((string)$row['supplier']) !== '' ? $row['supplier'] : '(Tanpa Supplier)';
+        if (!isset($supplierSummary[$name])) {
+            $supplierSummary[$name] = ['jumlah_po' => 0, 'total_hutang' => 0.0];
+        }
+        $supplierSummary[$name]['jumlah_po']++;
+        $supplierSummary[$name]['total_hutang'] += (float)$row['total'];
+        $grandTotal += (float)$row['total'];
+    }
+    uasort($supplierSummary, function ($a, $b) {
+        return $b['total_hutang'] <=> $a['total_hutang'];
+    });
+
+    $headerCells = function ($labels) use ($styleHeader) {
+        return array_map(function ($h) use ($styleHeader) {
+            return ['type' => 'text', 'value' => $h, 'style' => $styleHeader];
+        }, $labels);
+    };
+
+    // Sheet 1: Detail PO
+    $sheet1Rows = [$headerCells(['ID PO', 'Tanggal', 'Supplier', 'Jumlah Item', 'Total PO', 'Status', 'Dibuat Oleh', 'Umur Hutang (Hari)'])];
+    foreach ($data as $row) {
+        $sheet1Rows[] = [
+            ['type' => 'number', 'value' => (int)$row['po_id']],
+            ['type' => 'text', 'value' => $row['tanggal']],
+            ['type' => 'text', 'value' => $row['supplier']],
+            ['type' => 'number', 'value' => (int)$row['jumlah_item']],
+            ['type' => 'number', 'value' => (float)$row['total'], 'style' => $styleCurrency],
+            ['type' => 'text', 'value' => $row['status']],
+            ['type' => 'text', 'value' => $row['dibuat_oleh']],
+            ['type' => 'number', 'value' => (int)$row['umur_hari']],
+        ];
+    }
+    $sheet1Rows[] = [
+        ['type' => 'text', 'value' => ''],
+        ['type' => 'text', 'value' => ''],
+        ['type' => 'text', 'value' => 'TOTAL HUTANG', 'style' => $styleHeader],
+        ['type' => 'text', 'value' => ''],
+        ['type' => 'number', 'value' => $grandTotal, 'style' => $styleCurrency],
+    ];
+
+    // Sheet 2: Rekap per supplier
+    $sheet2Rows = [$headerCells(['Supplier', 'Jumlah PO', 'Total Hutang'])];
+    foreach ($supplierSummary as $name => $sum) {
+        $sheet2Rows[] = [
+            ['type' => 'text', 'value' => $name],
+            ['type' => 'number', 'value' => (int)$sum['jumlah_po']],
+            ['type' => 'number', 'value' => (float)$sum['total_hutang'], 'style' => $styleCurrency],
+        ];
+    }
+    $sheet2Rows[] = [
+        ['type' => 'text', 'value' => 'TOTAL HUTANG', 'style' => $styleHeader],
+        ['type' => 'number', 'value' => count($data)],
+        ['type' => 'number', 'value' => $grandTotal, 'style' => $styleCurrency],
+    ];
+
+    xlsxSendWorkbook(
+        sanitizeFilename('hutang_po_' . date('YmdHis') . '.xlsx'),
+        [
+            ['name' => 'Detail PO', 'rows' => $sheet1Rows, 'widths' => [10, 12, 28, 12, 16, 12, 16, 18]],
+            ['name' => 'Rekap per Supplier', 'rows' => $sheet2Rows, 'widths' => [30, 12, 18]],
+        ]
+    );
 }
 
 function csvEscapeLine($fields) {
