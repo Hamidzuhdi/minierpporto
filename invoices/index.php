@@ -29,16 +29,24 @@ include '../header.php';
                 </div>
                 <div class="card-body">
                     <div class="row mb-3">
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <input type="text" class="form-control" id="searchInput" placeholder="Cari invoice, SPK, customer, atau nomor polisi...">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-2">
                             <select class="form-select" id="statusFilter">
                                 <option value="">Semua Status</option>
                                 <option value="Belum Bayar">Belum Bayar</option>
                                 <option value="Sudah Dicicil">Sudah Dicicil</option>
                                 <option value="Lunas">Lunas</option>
                                 <option value="Tidak_Aktif">Tidak Aktif</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select" id="methodFilter" title="Tampilkan invoice yang punya pembayaran dengan metode ini">
+                                <option value="">Semua Metode Pembayaran</option>
+                                <option value="cash">Cash / Tunai</option>
+                                <option value="transfer">Rekening / Transfer</option>
+                                <option value="qris">QRIS</option>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -266,6 +274,11 @@ $(document).ready(function() {
         loadInvoices();
     });
 
+    // Filter metode pembayaran
+    $('#methodFilter').on('change', function() {
+        loadInvoices();
+    });
+
     // Filter bulan
     $('#monthFilter').on('change', function() {
         loadInvoices();
@@ -281,9 +294,10 @@ function loadInvoices() {
     let search = $('#searchInput').val();
     let status = $('#statusFilter').val();
     let month = $('#monthFilter').val();
+    let method = $('#methodFilter').val();
 
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&month=' + encodeURIComponent(month),
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&status=' + encodeURIComponent(status) + '&month=' + encodeURIComponent(month) + '&method=' + encodeURIComponent(method),
         type: 'GET',
         dataType: 'json',
         success: function(response) {

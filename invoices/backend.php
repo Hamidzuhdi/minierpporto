@@ -333,6 +333,7 @@ elseif ($action === 'read') {
     $search = $_GET['search'] ?? '';
     $status = $_GET['status'] ?? '';
     $month = $_GET['month'] ?? '';
+    $method = $_GET['method'] ?? '';
 
         $sql = "SELECT i.*, 
             s.id as spk_id, s.kode_unik_reference as spk_code, s.revision_number, s.status_spk,
@@ -368,6 +369,13 @@ elseif ($action === 'read') {
     if (!empty($month) && preg_match('/^\d{4}-\d{2}$/', $month)) {
         $month = mysqli_real_escape_string($conn, $month);
         $conditions[] = "DATE_FORMAT(i.tanggal, '%Y-%m') = '$month'";
+    }
+
+    if (in_array($method, PAYMENT_METHODS, true)) {
+        // Invoice tampil jika punya pembayaran dengan metode ini; invoice campuran (mis. QRIS + cash)
+        // tampil di filter masing-masing metodenya.
+        $methodApprovedCond = approved_payment_where_clause($hasPaymentApprovalCols, 'pm');
+        $conditions[] = "EXISTS (SELECT 1 FROM payments pm WHERE pm.invoice_id = i.id AND pm.method = '$method' $methodApprovedCond)";
     }
 
     if (count($conditions) > 0) {
