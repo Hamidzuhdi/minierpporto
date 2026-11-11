@@ -20,7 +20,12 @@ include '../header.php';
         <div class="col-12">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Data Invoice & Piutang</h5>
+                    <div class="d-flex align-items-center gap-3">
+                        <h5 class="mb-0">Data Invoice & Piutang</h5>
+                        <a href="#" id="btnBackFollowup" class="btn btn-outline-secondary btn-sm d-none">
+                            <i class="fas fa-arrow-left"></i> Kembali ke Follow-up
+                        </a>
+                    </div>
                     
                     <button class="btn btn-primary btn-sm" onclick="autoCreateInvoices()" id="btnAutoCreateInvoice">
                         <i class="fas fa-magic"></i> Refresh Invoice
@@ -97,6 +102,11 @@ include '../header.php';
             </div>
             <div class="modal-body" id="detailContent">
                 <!-- Detail akan diisi via AJAX -->
+            </div>
+            <div class="modal-footer d-none" id="detailBackFooter">
+                <a href="#" class="btn btn-outline-secondary btnBackFollowup">
+                    <i class="fas fa-arrow-left"></i> Kembali ke Follow-up
+                </a>
             </div>
         </div>
     </div>
@@ -255,6 +265,21 @@ let proofLightboxState = { urls: [], index: 0 };
 
 $(document).ready(function() {
     loadInvoices();
+
+    // Datang dari halaman Follow-up Customer: buka detail invoice yang dimaksud dan sediakan
+    // tombol kembali ke daftar follow-up (bukan ke halaman SPK). Alamat kembali hanya diterima
+    // jika berupa halaman Customers dengan filter reminder yang valid.
+    const urlParams = new URLSearchParams(window.location.search);
+    const backParam = urlParams.get('back') || '';
+    if (/^\.\.\/customers\/index\.php(\?reminder=(7days|1|6months))?$/.test(backParam)) {
+        $('#btnBackFollowup, .btnBackFollowup').attr('href', backParam);
+        $('#btnBackFollowup').removeClass('d-none');
+        $('#detailBackFooter').removeClass('d-none');
+    }
+    const openInvoiceId = parseInt(urlParams.get('open_invoice'), 10) || 0;
+    if (openInvoiceId > 0) {
+        viewDetail(openInvoiceId);
+    }
     
     if (isOwner) {
         $('#payment_date').val(new Date().toISOString().split('T')[0]);

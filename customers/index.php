@@ -228,6 +228,7 @@ $reminder_from_query = ($reminder_param === '2months') ? '1' : (in_array($remind
                     <div class="mb-3">
                         <div class="fw-bold" id="followupCustomerInfo"></div>
                         <small class="text-muted" id="followupTahapInfo"></small>
+                        <div class="small mt-2" id="followupLastInvoice"></div>
                     </div>
 
                     <div class="mb-3">
@@ -298,6 +299,9 @@ $(document).ready(function() {
     });
 
     $('#reminderFilter').on('change', function() {
+        // Simpan filter di URL supaya tombol Back browser juga kembali ke daftar yang sama
+        const reminder = $(this).val();
+        history.replaceState(null, '', FOLLOWUP_TAHAP_BY_FILTER[reminder] ? 'index.php?reminder=' + reminder : 'index.php');
         loadCustomers();
     });
 });
@@ -391,6 +395,23 @@ function escapeHtml(text) {
     return $('<div>').text(text == null ? '' : String(text)).html();
 }
 
+const INVOICE_STATUS_BADGE = {'Lunas': 'success', 'Sudah Dicicil': 'warning text-dark', 'Belum Bayar': 'danger'};
+
+// Alamat halaman ini (beserta filter reminder yang sedang aktif) untuk tombol "Kembali ke Follow-up"
+function followupBackUrl() {
+    const reminder = $('#reminderFilter').val() || '0';
+    return '../customers/index.php' + (FOLLOWUP_TAHAP_BY_FILTER[reminder] ? '?reminder=' + reminder : '');
+}
+
+// Buka detail invoice di halaman Invoices; dari sana bisa kembali ke daftar follow-up ini
+function invoiceViewUrl(invoiceId) {
+    return '../invoices/index.php?open_invoice=' + invoiceId + '&back=' + encodeURIComponent(followupBackUrl());
+}
+
+function formatRupiah(num) {
+    return 'Rp ' + (parseFloat(num) || 0).toLocaleString('id-ID');
+}
+
 // Buka modal catat follow-up untuk satu customer pada tahap filter reminder yang sedang aktif
 function openFollowupModal(customerId) {
     const customer = customerRows[customerId];
@@ -405,6 +426,7 @@ function openFollowupModal(customerId) {
     $('#followupCustomerInfo').text(customer.name + (customer.phone ? ' - ' + customer.phone : ''));
     $('#followupTahapInfo').text('Reminder tahap ' + FOLLOWUP_TAHAP_LABEL[tahap] + ' - SPK terakhir: ' + formatDate(customer.last_spk_at));
     $('#followupHistory').text('Memuat...');
+    $('#followupLastInvoice').text('');
     $('#followupModal').modal('show');
 
     $.ajax({
@@ -412,6 +434,19 @@ function openFollowupModal(customerId) {
         type: 'GET',
         dataType: 'json',
         success: function(response) {
+            const inv = response.last_invoice;
+            if (inv) {
+                $('#followupLastInvoice').html(`
+                    <strong>Invoice terakhir:</strong> ${escapeHtml(inv.no_invoice)} &middot; ${formatDate(inv.tanggal)} &middot;
+                    ${formatRupiah(inv.total)}
+                    <span class="badge bg-${INVOICE_STATUS_BADGE[inv.status_piutang] || 'secondary'}">${escapeHtml(inv.status_piutang)}</span>
+                    ${inv.sisa > 0 ? '&middot; sisa ' + formatRupiah(inv.sisa) : ''}
+                    <a href="${invoiceViewUrl(inv.id)}" class="btn btn-outline-primary btn-sm py-0 ms-1">Lihat Invoice</a>
+                `);
+            } else {
+                $('#followupLastInvoice').html('<span class="text-muted">Belum ada invoice untuk customer ini.</span>');
+            }
+
             if (!response.success || response.data.length === 0) {
                 $('#followupHistory').html('<span class="text-muted">Belum ada riwayat follow-up.</span>');
                 return;
@@ -487,7 +522,8 @@ function viewCustomerDetail(id) {
                 let customer = response.data.customer;
                 let vehicles = response.data.vehicles || [];
                 let lastSpk = response.data.last_spk;
-                
+                let lastInvoice = response.data.last_invoice;
+
                 let html = `
                     <h6 class="border-bottom pb-2 mb-3"><i class="fas fa-user"></i> Informasi Customer</h6>
                     <table class="table table-sm">
@@ -498,8 +534,24 @@ function viewCustomerDetail(id) {
                     </table>
                 `;
                 
-                // Tampilkan SPK terakhir jika ada
-                if (lastSpk) {
+                // Tampilkan invoice terakhir; SPK terakhir hanya jika customer belum punya invoice
+                if (lastInvoice) {
+                    html += `
+                        <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-file-invoice"></i> Invoice Terakhir</h6>
+                        <table class="table table-sm">
+                            <tr><th width="30%">No. Invoice:</th><td><strong>${escapeHtml(lastInvoice.no_invoice)}</strong></td></tr>
+                            <tr><th>SPK:</th><td>${escapeHtml(lastInvoice.spk_code)}</td></tr>
+                            <tr><th>Tanggal:</th><td>${formatDate(lastInvoice.tanggal)}</td></tr>
+                            <tr><th>Total:</th><td>${formatRupiah(lastInvoice.total)}</td></tr>
+                            <tr><th>Terbayar:</th><td>${formatRupiah(lastInvoice.total_paid)}</td></tr>
+                            <tr><th>Sisa:</th><td>${formatRupiah(lastInvoice.sisa)}</td></tr>
+                            <tr><th>Status:</th><td><span class="badge bg-${INVOICE_STATUS_BADGE[lastInvoice.status_piutang] || 'secondary'}">${escapeHtml(lastInvoice.status_piutang)}</span></td></tr>
+                        </table>
+                        <a href="${invoiceViewUrl(lastInvoice.id)}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-file-invoice"></i> Lihat Invoice
+                        </a>
+                    `;
+                } else if (lastSpk) {
                     html += `
                         <h6 class="border-bottom pb-2 mb-3 mt-4"><i class="fas fa-file-invoice"></i> SPK Terakhir</h6>
                         <table class="table table-sm">

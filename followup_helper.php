@@ -3,6 +3,8 @@
 // Follow-up customer: reminder dihitung dari SPK terakhir (tidak dibatalkan) tiap customer,
 // hasil follow-up dicatat per tahap (7 hari / 2 bulan / 6 bulan) sebagai riwayat.
 
+require_once __DIR__ . '/finance_helper.php';
+
 const FOLLOWUP_TAHAP_INTERVAL = [
     '7days' => '7 DAY',
     '2months' => '2 MONTH',
@@ -115,4 +117,29 @@ function followup_count_due(mysqli $conn, string $tahap): int
     );
     $row = $res ? mysqli_fetch_assoc($res) : null;
     return (int)($row['total'] ?? 0);
+}
+
+// Invoice terakhir (yang masih aktif) milik customer, ditampilkan di konteks follow-up.
+function followup_last_invoice(mysqli $conn, int $customerId): ?array
+{
+    $approvedCond = approved_payment_where_clause(finance_payments_have_approval_cols($conn), 'p');
+
+    $res = mysqli_query(
+        $conn,
+        "SELECT i.id, i.no_invoice, i.tanggal, i.total, i.status_piutang, s.kode_unik_reference AS spk_code,
+                COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id $approvedCond), 0) AS total_paid
+         FROM invoices i
+         JOIN spk s ON s.id = i.spk_id
+         WHERE s.customer_id = $customerId
+           AND i.status_piutang <> 'Tidak_Aktif'
+         ORDER BY i.tanggal DESC, i.id DESC
+         LIMIT 1"
+    );
+    $row = $res ? mysqli_fetch_assoc($res) : null;
+    if (!$row) {
+        return null;
+    }
+
+    $row['sisa'] = max(0, (float)$row['total'] - (float)$row['total_paid']);
+    return $row;
 }

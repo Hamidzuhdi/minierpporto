@@ -198,7 +198,8 @@ elseif ($action === 'read_one_with_vehicles') {
             'data' => [
                 'customer' => $customer,
                 'vehicles' => $vehicles,
-                'last_spk' => $last_spk
+                'last_spk' => $last_spk,
+                'last_invoice' => followup_last_invoice($conn, $id)
             ]
         ]);
     } else {
@@ -404,7 +405,11 @@ elseif ($action === 'get_followups') {
         $followups[] = $row;
     }
 
-    echo json_encode(['success' => true, 'data' => $followups]);
+    echo json_encode([
+        'success' => true,
+        'data' => $followups,
+        'last_invoice' => followup_last_invoice($conn, $customer_id)
+    ]);
 }
 
 // DELETE - Hapus Customer
