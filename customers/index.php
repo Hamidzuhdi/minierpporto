@@ -299,9 +299,6 @@ $(document).ready(function() {
     });
 
     $('#reminderFilter').on('change', function() {
-        // Simpan filter di URL supaya tombol Back browser juga kembali ke daftar yang sama
-        const reminder = $(this).val();
-        history.replaceState(null, '', FOLLOWUP_TAHAP_BY_FILTER[reminder] ? 'index.php?reminder=' + reminder : 'index.php');
         loadCustomers();
     });
 });
@@ -397,15 +394,9 @@ function escapeHtml(text) {
 
 const INVOICE_STATUS_BADGE = {'Lunas': 'success', 'Sudah Dicicil': 'warning text-dark', 'Belum Bayar': 'danger'};
 
-// Alamat halaman ini (beserta filter reminder yang sedang aktif) untuk tombol "Kembali ke Follow-up"
-function followupBackUrl() {
-    const reminder = $('#reminderFilter').val() || '0';
-    return '../customers/index.php' + (FOLLOWUP_TAHAP_BY_FILTER[reminder] ? '?reminder=' + reminder : '');
-}
-
-// Buka detail invoice di halaman Invoices; dari sana bisa kembali ke daftar follow-up ini
-function invoiceViewUrl(invoiceId) {
-    return '../invoices/index.php?open_invoice=' + invoiceId + '&back=' + encodeURIComponent(followupBackUrl());
+// PDF invoice (dibuat per SPK); dibuka di tab baru supaya halaman follow-up tetap terbuka
+function invoicePdfUrl(inv) {
+    return '../spk/generate_invoice_pdf.php?spk_id=' + inv.spk_id;
 }
 
 function formatRupiah(num) {
@@ -441,7 +432,7 @@ function openFollowupModal(customerId) {
                     ${formatRupiah(inv.total)}
                     <span class="badge bg-${INVOICE_STATUS_BADGE[inv.status_piutang] || 'secondary'}">${escapeHtml(inv.status_piutang)}</span>
                     ${inv.sisa > 0 ? '&middot; sisa ' + formatRupiah(inv.sisa) : ''}
-                    <a href="${invoiceViewUrl(inv.id)}" class="btn btn-outline-primary btn-sm py-0 ms-1">Lihat Invoice</a>
+                    <a href="${invoicePdfUrl(inv)}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm py-0 ms-1">Lihat Invoice</a>
                 `);
             } else {
                 $('#followupLastInvoice').html('<span class="text-muted">Belum ada invoice untuk customer ini.</span>');
@@ -547,7 +538,7 @@ function viewCustomerDetail(id) {
                             <tr><th>Sisa:</th><td>${formatRupiah(lastInvoice.sisa)}</td></tr>
                             <tr><th>Status:</th><td><span class="badge bg-${INVOICE_STATUS_BADGE[lastInvoice.status_piutang] || 'secondary'}">${escapeHtml(lastInvoice.status_piutang)}</span></td></tr>
                         </table>
-                        <a href="${invoiceViewUrl(lastInvoice.id)}" class="btn btn-sm btn-primary">
+                        <a href="${invoicePdfUrl(lastInvoice)}" target="_blank" rel="noopener" class="btn btn-sm btn-primary">
                             <i class="fas fa-file-invoice"></i> Lihat Invoice
                         </a>
                     `;

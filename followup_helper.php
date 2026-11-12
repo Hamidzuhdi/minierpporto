@@ -126,7 +126,7 @@ function followup_last_invoice(mysqli $conn, int $customerId): ?array
 
     $res = mysqli_query(
         $conn,
-        "SELECT i.id, i.no_invoice, i.tanggal, i.total, i.status_piutang, s.kode_unik_reference AS spk_code,
+        "SELECT i.id, i.spk_id, i.no_invoice, i.tanggal, i.total, i.status_piutang, s.kode_unik_reference AS spk_code,
                 COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id $approvedCond), 0) AS total_paid
          FROM invoices i
          JOIN spk s ON s.id = i.spk_id
