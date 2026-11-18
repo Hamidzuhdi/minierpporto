@@ -305,19 +305,22 @@ if ($is_owner) {
             </a>
         </div>
         <div class="col-md-4">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-muted mb-2">Sparepart Stok Menipis</h6>
-                            <h2 class="mb-0"><?php echo $sparepart_low_stock; ?></h2>
-                        </div>
-                        <div class="bg-danger bg-opacity-10 rounded p-3">
-                            <i class="fas fa-exclamation-triangle fa-2x text-danger"></i>
+            <a href="spareparts/index.php?low_stock=1" class="text-decoration-none text-reset d-block h-100">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted mb-2">Sparepart Stok Menipis</h6>
+                                <h2 class="mb-0"><?php echo $sparepart_low_stock; ?></h2>
+                                <small class="text-danger">Klik untuk lihat detail sparepart</small>
+                            </div>
+                            <div class="bg-danger bg-opacity-10 rounded p-3">
+                                <i class="fas fa-exclamation-triangle fa-2x text-danger"></i>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </a>
         </div>
         <div class="col-md-4">
             <div class="card border-0 shadow-sm h-100">
