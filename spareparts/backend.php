@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once '../sparepart_helper.php';
 
 global $conn;
 
@@ -11,6 +12,9 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 header('Content-Type: application/json');
+
+// Kolom kategori (Fast/Slow Moving) dipastikan ada; migrasi resminya di migrations/20261119_sparepart_kategori_migration.php
+sparepart_ensure_kategori_column($conn);
 
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
 $user_role = $_SESSION['role'] ?? 'Admin';
