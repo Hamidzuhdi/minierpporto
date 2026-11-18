@@ -410,12 +410,13 @@ include '../header.php';
                                 <th>Status</th>
                                 <th>Kategori</th>
                                 <th>Ref</th>
+                                <th>Detail Invoice / SPK</th>
                                 <th>Dibuat Oleh</th>
                                 <th>Catatan</th>
                                 <th class="text-end">Nominal</th>
                             </tr>
                         </thead>
-                        <tbody id="accountExpenseBody"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody>
+                        <tbody id="accountExpenseBody"><tr><td colspan="9" class="text-center text-muted">Loading...</td></tr></tbody>
                     </table>
                 </div>
             </div>
@@ -439,6 +440,7 @@ include '../header.php';
 
 <script>
 function fmt(n){ return 'Rp ' + parseFloat(n || 0).toLocaleString('id-ID'); }
+function escapeHtml(text){ return $('<div>').text(text == null ? '' : String(text)).html(); }
 const isOwner = '<?php echo $user_role; ?>' === 'Owner';
 let expenseCategoryMap = {};
 
@@ -843,7 +845,7 @@ function openAccountExpenseModal(accountCode, accountLabel) {
     $('#ex_direction').val('');
     $('#ex_status').val('');
     $('#ex_keyword').val('');
-    $('#accountExpenseBody').html('<tr><td colspan="8" class="text-center text-muted">Loading...</td></tr>');
+    $('#accountExpenseBody').html('<tr><td colspan="9" class="text-center text-muted">Loading...</td></tr>');
 
     if (window.bootstrap && bootstrap.Modal) {
         const modalEl = document.getElementById('accountExpenseModal');
@@ -873,13 +875,13 @@ function loadAccountExpenses() {
 
     $.getJSON('backend.php?' + query, function(res) {
         if (!res.success) {
-            $('#accountExpenseBody').html('<tr><td colspan="8" class="text-center text-danger">' + (res.message || 'Gagal memuat data') + '</td></tr>');
+            $('#accountExpenseBody').html('<tr><td colspan="9" class="text-center text-danger">' + (res.message || 'Gagal memuat data') + '</td></tr>');
             return;
         }
 
         let html = '';
         if (!res.data.length) {
-            html = '<tr><td colspan="8" class="text-center text-muted">Belum ada data</td></tr>';
+            html = '<tr><td colspan="9" class="text-center text-muted">Belum ada data</td></tr>';
         } else {
             res.data.forEach(function(row) {
                 const amount = parseFloat(row.amount || 0);
@@ -898,12 +900,20 @@ function loadAccountExpenses() {
                 const isOplRow2 = (/OPL/i.test(row.category || '') && row.reference_type === 'operational' && row.reference_id);
                 const rowAttr2 = isOplRow2 ? `style="cursor:pointer;" onclick="openOplDetailModal(${row.reference_id})" title="Klik untuk lihat Laba OPL"` : '';
                 const categoryCell2 = isOplRow2 ? `${row.category} <i class="fas fa-hand-holding-usd text-primary" title="Lihat Laba OPL"></i>` : (row.category || '-');
+                // Detail invoice/SPK (hanya ada untuk pembayaran invoice dan DP)
+                const detailLines = [
+                    row.invoice_no ? `<strong>${escapeHtml(row.invoice_no)}</strong>` : '',
+                    row.customer_name ? escapeHtml(row.customer_name) : '',
+                    [row.nomor_polisi ? escapeHtml(row.nomor_polisi) : '', row.spk_tanggal ? 'SPK ' + escapeHtml(row.spk_tanggal) : ''].filter(Boolean).join(' &middot; ')
+                ].filter(Boolean);
+                const detailCell = detailLines.length ? `<small>${detailLines.join('<br>')}</small>` : '-';
                 html += `<tr ${rowAttr2}>
                     <td>${row.tanggal || '-'}</td>
                     <td>${dirLabel}</td>
                     <td>${getStatusBadgeHtml(row.status)}</td>
                     <td>${categoryCell2}</td>
                     <td>${reference}</td>
+                    <td>${detailCell}</td>
                     <td>${creator}</td>
                     <td>${row.note || '-'}</td>
                     <td class="text-end ${cls}">${sign}${fmt(amount)}</td>

@@ -21,6 +21,15 @@ if (!in_array($userRole, ['Owner', 'Admin'], true)) {
     exit;
 }
 
+// Detail invoice/SPK untuk baris mutasi akun: pembayaran invoice (reference 'invoice') dan DP (reference 'spk').
+// Baris lain (pengeluaran, transfer, dst) tidak punya detail sehingga kolomnya NULL.
+$mutasiDetailSelect = "i.no_invoice AS invoice_no, c.name AS customer_name, v.nomor_polisi,
+                   s.tanggal AS spk_tanggal, s.kode_unik_reference AS spk_code";
+$mutasiDetailJoins = "LEFT JOIN invoices i ON ft.reference_type = 'invoice' AND i.id = ft.reference_id
+            LEFT JOIN spk s ON s.id = CASE ft.reference_type WHEN 'invoice' THEN i.spk_id WHEN 'spk' THEN ft.reference_id END
+            LEFT JOIN customers c ON c.id = s.customer_id
+            LEFT JOIN vehicles v ON v.id = s.vehicle_id";
+
 if ($action === 'get_accounts') {
     $res = mysqli_query($conn, "SELECT id, code, name, opening_balance, current_balance FROM finance_accounts WHERE is_active = 1 ORDER BY id ASC");
     $rows = [];
@@ -323,10 +332,12 @@ elseif ($action === 'read_account_expenses') {
 
     $sql = "SELECT ft.id, ft.tanggal, ft.direction, ft.status, ft.category, ft.reference_type, ft.reference_id,
                    ft.note, ft.amount, ft.created_by, u.username as created_by_name,
-                   fa.code as account_code, fa.name as account_name
+                   fa.code as account_code, fa.name as account_name,
+                   $mutasiDetailSelect
             FROM finance_transactions ft
             JOIN finance_accounts fa ON ft.account_id = fa.id
             LEFT JOIN users u ON ft.created_by = u.id
+            $mutasiDetailJoins
             WHERE " . implode(' AND ', $conds) . "
             ORDER BY ft.tanggal DESC, ft.id DESC
             LIMIT 300";
@@ -386,10 +397,12 @@ elseif ($action === 'export_account_expenses_excel') {
     }
 
     $sql = "SELECT ft.tanggal, fa.name as account_name, ft.direction, ft.status, ft.category,
-                   ft.reference_type, ft.reference_id, u.username as created_by_name, ft.note, ft.amount
+                   ft.reference_type, ft.reference_id, u.username as created_by_name, ft.note, ft.amount,
+                   $mutasiDetailSelect
             FROM finance_transactions ft
             JOIN finance_accounts fa ON ft.account_id = fa.id
             LEFT JOIN users u ON ft.created_by = u.id
+            $mutasiDetailJoins
             WHERE " . implode(' AND ', $conds) . "
             ORDER BY ft.tanggal DESC, ft.id DESC
             LIMIT 5000";
@@ -420,7 +433,7 @@ elseif ($action === 'export_account_expenses_excel') {
     };
 
     $lines = [];
-    $lines[] = $escapeCsvLine(['Tanggal', 'Akun', 'Arah', 'Status', 'Kategori', 'Referensi', 'Dibuat Oleh', 'Catatan', 'Nominal']);
+    $lines[] = $escapeCsvLine(['Tanggal', 'Akun', 'Arah', 'Status', 'Kategori', 'Referensi', 'No. Invoice', 'Customer', 'Nopol', 'Tgl SPK', 'Dibuat Oleh', 'Catatan', 'Nominal']);
 
     while ($r = mysqli_fetch_assoc($res)) {
         $reference = ($r['reference_type'] ?: '-') . ($r['reference_id'] ? (' #' . $r['reference_id']) : '');
@@ -433,6 +446,10 @@ elseif ($action === 'export_account_expenses_excel') {
             $r['status'],
             $r['category'] ?: '-',
             $reference,
+            $r['invoice_no'] ?: '-',
+            $r['customer_name'] ?: '-',
+            $r['nomor_polisi'] ?: '-',
+            $r['spk_tanggal'] ?: '-',
             $r['created_by_name'] ?: '-',
             $r['note'] ?: '-',
             $sign . 'Rp ' . number_format((float)$r['amount'], 0, ',', '.'),
