@@ -39,17 +39,29 @@ $is_admin = ($user_role === 'Admin');
                     </button>
                 </div>
                 <div class="card-body">
-                    <div class="row mb-3">
-                        <div class="col-md-8">
+                    <div class="row mb-3 align-items-center">
+                        <div class="col-md-5">
                             <input type="text" class="form-control" id="searchInput" placeholder="Cari nama atau kode sparepart...">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-2">
+                            <select class="form-select" id="kategoriFilter">
+                                <option value="">Semua Kategori</option>
+                                <option value="Fast Moving">Fast Moving</option>
+                                <option value="Slow Moving">Slow Moving</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="lowStockFilter">
                                 <label class="form-check-label" for="lowStockFilter">
-                                    Tampilkan hanya stok menipis
+                                    Hanya stok menipis
                                 </label>
                             </div>
+                        </div>
+                        <div class="col-md-2 text-end">
+                            <button class="btn btn-success btn-sm" onclick="exportExcel()">
+                                <i class="fas fa-file-excel"></i> Download Excel
+                            </button>
                         </div>
                     </div>
                     <div class="table-responsive">
@@ -61,6 +73,7 @@ $is_admin = ($user_role === 'Admin');
                                     <th>Nama</th>
                                     <th>Barcode</th>
                                     <th>Satuan</th>
+                                    <th>Kategori</th>
                                     <th class="buy-price-column">Harga Beli</th>
                                     <th>Harga Jual</th>
                                     <th>Stock</th>
@@ -70,7 +83,7 @@ $is_admin = ($user_role === 'Admin');
                             </thead>
                             <tbody id="sparepartTableBody">
                                 <tr>
-                                    <td colspan="10" class="text-center">Loading...</td>
+                                    <td colspan="11" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -111,14 +124,14 @@ $is_admin = ($user_role === 'Admin');
                     </div>
                     
                     <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="mb-3">
                                 <label for="barcode" class="form-label">Barcode/QR Code</label>
                                 <input type="text" class="form-control" id="barcode" name="barcode">
                                 <small class="text-muted">Kosongkan jika tidak ada</small>
                             </div>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="mb-3">
                                 <label for="satuan" class="form-label">Satuan</label>
                                 <select class="form-select" id="satuan" name="satuan">
@@ -126,6 +139,15 @@ $is_admin = ($user_role === 'Admin');
                                     <option value="Pkt">Pkt (Paket)</option>
                                     <option value="Lt">Lt (Liter)</option>
                                     <option value="Gl">Gl (Galon)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label for="kategori" class="form-label">Kategori</label>
+                                <select class="form-select" id="kategori" name="kategori">
+                                    <option value="Slow Moving">Slow Moving</option>
+                                    <option value="Fast Moving">Fast Moving</option>
                                 </select>
                             </div>
                         </div>
@@ -199,15 +221,21 @@ $(document).ready(function() {
     $('#lowStockFilter').on('change', function() {
         loadSpareparts();
     });
+
+    // Filter kategori
+    $('#kategoriFilter').on('change', function() {
+        loadSpareparts();
+    });
 });
 
 // Load semua sparepart
 function loadSpareparts() {
     let search = $('#searchInput').val();
     let lowStock = $('#lowStockFilter').is(':checked') ? '1' : '';
-    
+    let kategori = $('#kategoriFilter').val();
+
     $.ajax({
-        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&low_stock=' + lowStock,
+        url: 'backend.php?action=read&search=' + encodeURIComponent(search) + '&low_stock=' + lowStock + '&kategori=' + encodeURIComponent(kategori),
         type: 'GET',
         dataType: 'json',
         success: function(response) {
@@ -228,7 +256,7 @@ function displaySpareparts(spareparts) {
     let html = '';
     
     if (spareparts.length === 0) {
-        html = '<tr><td colspan="10" class="text-center">Belum ada data sparepart</td></tr>';
+        html = '<tr><td colspan="11" class="text-center">Belum ada data sparepart</td></tr>';
     } else {
         spareparts.forEach(function(sp) {
             // Konversi ke integer untuk perbandingan yang benar
@@ -238,6 +266,10 @@ function displaySpareparts(spareparts) {
             let stockClass = currentStock <= minStock ? 'text-danger fw-bold' : '';
             let stockIcon = currentStock <= minStock ? '<i class="fas fa-exclamation-triangle text-warning"></i> ' : '';
             
+            let kategoriBadge = sp.kategori === 'Fast Moving'
+                ? '<span class="badge bg-success">Fast Moving</span>'
+                : '<span class="badge bg-secondary">Slow Moving</span>';
+
             html += `
                 <tr>
                     <td>${sp.id}</td>
@@ -245,6 +277,7 @@ function displaySpareparts(spareparts) {
                     <td>${sp.nama}</td>
                     <td>${sp.barcode || '-'}</td>
                     <td>${sp.satuan}</td>
+                    <td>${kategoriBadge}</td>
                     <td class="buy-price-column">Rp ${formatNumber(sp.harga_beli_default)}</td>
                     <td>Rp ${formatNumber(sp.harga_jual_default)}</td>
                     <td class="${stockClass}">${stockIcon}${currentStock}</td>
@@ -272,6 +305,7 @@ function openAddModal() {
     $('#sparepartId').val('');
     $('#formAction').val('create');
     $('#satuan').val('Pcs');
+    $('#kategori').val('Slow Moving');
     $('#harga_beli_default').val('0');
     $('#harga_jual_default').val('0');
     $('#min_stock').val('0');
@@ -293,6 +327,7 @@ function editSparepart(id) {
                 $('#nama').val(sp.nama);
                 $('#barcode').val(sp.barcode);
                 $('#satuan').val(sp.satuan);
+                $('#kategori').val(sp.kategori || 'Slow Moving');
                 $('#harga_beli_default').val(sp.harga_beli_default);
                 $('#harga_jual_default').val(sp.harga_jual_default);
                 $('#min_stock').val(sp.min_stock);
@@ -374,15 +409,35 @@ function showAlert(type, message) {
     }, 3000);
 }
 
-// Auto-open edit modal if edit_id param is in URL
+// Export Excel with current filters
+function exportExcel() {
+    let search = $('#searchInput').val();
+    let lowStock = $('#lowStockFilter').is(':checked') ? '1' : '';
+    let kategori = $('#kategoriFilter').val();
+    window.location.href = 'backend.php?action=export_excel&search=' + encodeURIComponent(search) + '&low_stock=' + lowStock + '&kategori=' + encodeURIComponent(kategori);
+}
+
+// Auto-apply URL params for filters
 $(document).ready(function() {
     const urlParams = new URLSearchParams(window.location.search);
+
     const editId = urlParams.get('edit_id');
     if (editId) {
-        // Wait for spareparts to load then open modal
         setTimeout(function() {
             editSparepart(editId);
         }, 600);
+    }
+
+    const lowStockParam = urlParams.get('low_stock');
+    if (lowStockParam === '1') {
+        $('#lowStockFilter').prop('checked', true);
+        loadSpareparts();
+    }
+
+    const kategoriParam = urlParams.get('kategori');
+    if (kategoriParam) {
+        $('#kategoriFilter').val(kategoriParam);
+        loadSpareparts();
     }
 });
 </script>
