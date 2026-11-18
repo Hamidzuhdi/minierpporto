@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../config.php';
+require_once '../stock_trace_helper.php';
 
 global $conn;
 
@@ -106,72 +107,14 @@ elseif ($action === 'get_purchase_detail') {
         exit;
     }
     
-    // Query untuk ambil purchase items dengan tracking ke SPK
-    $sql = "SELECT
-                pi.id,
-                pi.purchase_id,
-                pi.sparepart_id,
-                pi.qty as qty_beli,
-                pi.harga_beli,
-                s.nama as sparepart_name,
-                s.kode_sparepart,
-                s.satuan,
-                LEAST(pi.qty, COALESCE(SUM(si.qty), 0)) as qty_pakai,
-                GREATEST(0, pi.qty - LEAST(pi.qty, COALESCE(SUM(si.qty), 0))) as qty_sisa
-            FROM purchase_items pi
-            JOIN spareparts s ON pi.sparepart_id = s.id
-            LEFT JOIN spk_items si ON pi.sparepart_id = si.sparepart_id 
-            LEFT JOIN spk spk_check ON si.spk_id = spk_check.id 
-                AND spk_check.status_spk IN ('Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice')
-            WHERE pi.purchase_id = $purchase_id AND (si.id IS NULL OR spk_check.id IS NOT NULL)
-            GROUP BY pi.id, pi.sparepart_id, s.nama, s.kode_sparepart, s.satuan, pi.qty, pi.harga_beli
-            ORDER BY s.nama ASC";
-    
-    $result = mysqli_query($conn, $sql);
-    if (!$result) {
-        echo json_encode(['success' => false, 'message' => 'Error: ' . mysqli_error($conn)]);
+    // Pemakaian ditelusuri FIFO per sparepart (lihat stock_trace_helper.php): stok lama & PO lebih awal habis
+    // lebih dulu, SPK diurutkan dari yang paling lama, dan SPK baru tidak menggeser SPK lama.
+    $items = stock_trace_purchase_items($conn, $purchase_id);
+    if ($items === null) {
+        echo json_encode(['success' => false, 'message' => 'Purchase tidak ditemukan']);
         exit;
     }
-    
-    $items = [];
-    while ($item = mysqli_fetch_assoc($result)) {
-        // Query untuk ambil SPK yang menggunakan sparepart ini
-        $sparepart_id = $item['sparepart_id'];
-        $spk_sql = "SELECT
-                        s.id as spk_id,
-                        s.kode_unik_reference as kode_spk,
-                        s.tanggal,
-                        SUM(si.qty) as qty
-                    FROM spk_items si
-                    JOIN spk s ON si.spk_id = s.id
-                    WHERE si.sparepart_id = $sparepart_id
-                    AND s.status_spk IN ('Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice')
-                    GROUP BY si.spk_id, s.id, s.kode_unik_reference, s.tanggal
-                    ORDER BY s.tanggal DESC";
-        
-        $spk_result = mysqli_query($conn, $spk_sql);
-        $spk_usage = [];
-        $qty_accumulated = 0;
-        $qty_needed = (int)$item['qty_pakai'];
-        
-        while ($spk_row = mysqli_fetch_assoc($spk_result)) {
-            if ($qty_accumulated >= $qty_needed) {
-                break; // Sudah cukup qty_pakai
-            }
-            
-            $qty_in_this_spk = (int)$spk_row['qty'];
-            $qty_to_allocate = min($qty_in_this_spk, $qty_needed - $qty_accumulated);
-            
-            $spk_row['qty'] = $qty_to_allocate; // Hanya tampilkan qty yang terpakai dari purchase ini
-            $spk_usage[] = $spk_row;
-            
-            $qty_accumulated += $qty_to_allocate;
-        }
-        
-        $item['spk_usage'] = $spk_usage;
-        $items[] = $item;
-    }
-    
+
     echo json_encode(['success' => true, 'data' => $items]);
     exit;
 }
@@ -196,62 +139,9 @@ elseif ($action === 'export_detail_pdf') {
         die('Purchase tidak ditemukan');
     }
     
-    // Get items with SPK tracking
-    $sql = "SELECT
-                pi.id,
-                pi.sparepart_id,
-                pi.qty as qty_beli,
-                pi.harga_beli,
-                s.nama as sparepart_name,
-                s.kode_sparepart,
-                s.satuan,
-                LEAST(pi.qty, COALESCE(SUM(si.qty), 0)) as qty_pakai,
-                GREATEST(0, pi.qty - LEAST(pi.qty, COALESCE(SUM(si.qty), 0))) as qty_sisa
-            FROM purchase_items pi
-            JOIN spareparts s ON pi.sparepart_id = s.id
-            LEFT JOIN spk_items si ON pi.sparepart_id = si.sparepart_id 
-            LEFT JOIN spk spk_check ON si.spk_id = spk_check.id 
-                AND spk_check.status_spk IN ('Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice')
-            WHERE pi.purchase_id = $purchase_id AND (si.id IS NULL OR spk_check.id IS NOT NULL)
-            GROUP BY pi.id, pi.sparepart_id, s.nama, s.kode_sparepart, s.satuan, pi.qty, pi.harga_beli
-            ORDER BY s.nama ASC";
-    
-    $result = mysqli_query($conn, $sql);
-    $items = [];
-    
-    while ($item = mysqli_fetch_assoc($result)) {
-        $sparepart_id = $item['sparepart_id'];
-        $spk_sql = "SELECT s.id as spk_id, s.kode_unik_reference as kode_spk, s.tanggal, SUM(si.qty) as qty
-                    FROM spk_items si
-                    JOIN spk s ON si.spk_id = s.id
-                    WHERE si.sparepart_id = $sparepart_id
-                    AND s.status_spk IN ('Disetujui', 'Dalam Pengerjaan', 'Selesai', 'Dikirim ke Owner', 'Buat Invoice', 'Sudah Cetak Invoice')
-                    GROUP BY si.spk_id, s.id, s.kode_unik_reference, s.tanggal
-                    ORDER BY s.tanggal DESC";
-        
-        $spk_result = mysqli_query($conn, $spk_sql);
-        $spk_usage = [];
-        $qty_accumulated = 0;
-        $qty_needed = (int)$item['qty_pakai'];
-        
-        while ($spk_row = mysqli_fetch_assoc($spk_result)) {
-            if ($qty_accumulated >= $qty_needed) {
-                break; // Sudah cukup qty_pakai
-            }
-            
-            $qty_in_this_spk = (int)$spk_row['qty'];
-            $qty_to_allocate = min($qty_in_this_spk, $qty_needed - $qty_accumulated);
-            
-            $spk_row['qty'] = $qty_to_allocate; // Hanya tampilkan qty yang terpakai dari purchase ini
-            $spk_usage[] = $spk_row;
-            
-            $qty_accumulated += $qty_to_allocate;
-        }
-        
-        $item['spk_usage'] = $spk_usage;
-        $items[] = $item;
-    }
-    
+    // Items dengan pelacakan SPK (FIFO, sama dengan tampilan detail)
+    $items = stock_trace_purchase_items($conn, $purchase_id) ?? [];
+
     // Create PDF
     $mpdf = new \Mpdf\Mpdf(['tempDir' => sys_get_temp_dir()]);
     
@@ -311,7 +201,7 @@ elseif ($action === 'export_detail_pdf') {
             }
             $spk_text .= '</div>';
         } else {
-            $spk_text = '<div class="spk-list"><div class="spk-item"><i>Belum dipakai</i></div></div>';
+            $spk_text = '<div class="spk-list"><div class="spk-item"><i>' . (!empty($item['refunded']) ? 'Purchase di-refund' : 'Belum dipakai') . '</i></div></div>';
         }
         
         $html .= '

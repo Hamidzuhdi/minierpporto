@@ -241,19 +241,26 @@ function renderPurchaseDetailModal(items) {
     if (items.length === 0) {
         html = '<div class="alert alert-info">Tidak ada item dalam purchase ini</div>';
     } else {
+        html = '<div class="alert alert-light border small mb-3"><i class="fas fa-info-circle"></i> Pemakaian dihitung berurutan (FIFO): stok lama dan purchase yang lebih awal habis lebih dulu, SPK diurutkan dari yang paling lama. SPK baru tidak menggeser SPK sebelumnya. SPK yang dibatalkan tidak dihitung.</div>';
         items.forEach(function(item, index) {
             const qtyPakai = item.qty_pakai || 0;
             const qtySisa = item.qty_sisa || 0;
-            const statusClass = qtySisa > 0 ? 'warning' : (qtyPakai > 0 ? 'success' : 'secondary');
-            const statusText = qtySisa > 0 ? 'Sebagian Terpakai' : (qtyPakai > 0 ? 'Semua Terpakai' : 'Belum Terpakai');
+            let statusClass = qtyPakai === 0 ? 'secondary' : (qtySisa > 0 ? 'warning' : 'success');
+            let statusText = qtyPakai === 0 ? 'Belum Terpakai' : (qtySisa > 0 ? 'Sebagian Terpakai' : 'Semua Terpakai');
+            if (item.refunded) {
+                statusClass = 'danger';
+                statusText = 'Di-refund';
+            }
             
             let spkDetails = '';
             if (item.spk_usage && item.spk_usage.length > 0) {
                 spkDetails = '<ul class="ms-3 mt-2 mb-0">';
                 item.spk_usage.forEach(function(spk) {
-                    spkDetails += `<li>SPK ${spk.kode_spk} - ${spk.qty} qty (${formatDate(spk.tanggal)})</li>`;
+                    spkDetails += `<li>SPK ${spk.kode_spk} - ${spk.qty} qty (${formatDate(spk.tanggal)}) <small class="text-muted">&middot; ${spk.status_spk || '-'}</small></li>`;
                 });
                 spkDetails += '</ul>';
+            } else if (item.refunded) {
+                spkDetails = '<small class="text-muted ms-3 mt-2 d-block"><i>Purchase ini sudah di-refund, stoknya sudah dikurangi.</i></small>';
             } else if (qtyPakai === 0) {
                 spkDetails = '<small class="text-muted ms-3 mt-2 d-block"><i>Belum dipakai di SPK manapun</i></small>';
             }
