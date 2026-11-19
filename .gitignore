@@ -8,6 +8,9 @@ coba/
 uploads/payments/*
 !uploads/payments/.gitkeep
 
+# Backup JSON dari skrip koreksi data (berisi data keuangan)
+scripts/backup/
+
 # Temporary & Generated Files
 *.log
 *.tmp
