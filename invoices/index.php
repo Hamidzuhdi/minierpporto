@@ -68,6 +68,7 @@ include '../header.php';
                                     <th>Customer</th>
                                     <th>Kendaraan</th>
                                     <th>Dibuat Oleh</th>
+                                    <th>Total</th>
                                     <th>Terbayar</th>
                                     <th>Sisa</th>
                                     <th>Status</th>
@@ -76,7 +77,7 @@ include '../header.php';
                             </thead>
                             <tbody id="invoiceTableBody">
                                 <tr>
-                                    <td colspan="9" class="text-center">Loading...</td>
+                                    <td colspan="10" class="text-center">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -315,7 +316,7 @@ function displayInvoices(invoices) {
     let html = '';
     
     if (invoices.length === 0) {
-        html = '<tr><td colspan="9" class="text-center">Belum ada data invoice</td></tr>';
+        html = '<tr><td colspan="10" class="text-center">Belum ada data invoice</td></tr>';
     } else {
         invoices.forEach(function(inv) {
             const displaySpkCode = normalizeSpkCode(inv.spk_code, inv.revision_number);
@@ -334,6 +335,13 @@ function displayInvoices(invoices) {
             const creatorName = inv.invoice_created_by_name || '-';
             const creatorText = (inv.user_id ? ('User #' + inv.user_id) : '-') + '<br><small class="text-muted">' + creatorRole + ' (' + creatorName + ')</small>';
 
+            // Total sudah setelah diskon SPK yang di-ACC Owner; tampilkan diskonnya di bawah total bila ada.
+            const rowDiscount = parseFloat(inv.discount_amount) || 0;
+            const rowSubtotal = (parseFloat(inv.biaya_jasa) || 0) + (parseFloat(inv.biaya_sparepart) || 0);
+            const totalCell = 'Rp ' + formatNumber(inv.total) + (rowDiscount > 0
+                ? '<br><small class="text-danger" title="Subtotal Rp ' + formatNumber(rowSubtotal) + '">Diskon - Rp ' + formatNumber(rowDiscount) + '</small>'
+                : '');
+
             html += `
                 <tr>
                     <td>${inv.id}</td>
@@ -341,6 +349,7 @@ function displayInvoices(invoices) {
                     <td>${inv.customer_name}<br><small class="text-muted">${inv.customer_phone}</small></td>
                     <td><small>${inv.nomor_polisi}<br>${inv.merk} ${inv.model}</small></td>
                     <td>${creatorText}</td>
+                    <td>${totalCell}</td>
                     <td class="text-success">Rp ${formatNumber(inv.total_paid)}</td>
                     <td class="text-danger">Rp ${formatNumber(inv.sisa_piutang)}</td>
                     <td>${statusBadge}</td>
