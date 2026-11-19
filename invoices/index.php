@@ -515,6 +515,10 @@ function displayInvoiceDetail(inv) {
         paymentsHtml = '<tr><td colspan="7" class="text-center text-muted">Belum ada pembayaran</td></tr>';
     }
     
+    // Diskon (di-ACC Owner di SPK) dipotong dari subtotal jasa + sparepart untuk menghasilkan GRAND TOTAL.
+    const discountAmount = parseFloat(inv.discount_amount) || 0;
+    const subtotalBeforeDiscount = (parseFloat(inv.biaya_jasa) || 0) + (parseFloat(inv.biaya_sparepart) || 0);
+
     let html = `
         <div class="row mb-3">
             <div class="col-md-6">
@@ -579,6 +583,16 @@ function displayInvoiceDetail(inv) {
         
         <table class="table table-bordered table-sm">
             <tfoot>
+                ${discountAmount > 0 ? `
+                <tr>
+                    <td colspan="3" class="text-end">Subtotal (Jasa + Sparepart):</td>
+                    <td class="text-end" width="20%">Rp ${formatNumber(subtotalBeforeDiscount)}</td>
+                </tr>
+                <tr>
+                    <td colspan="3" class="text-end text-danger"><strong>Diskon:</strong></td>
+                    <td class="text-end text-danger" width="20%"><strong>- Rp ${formatNumber(discountAmount)}</strong></td>
+                </tr>
+                ` : ''}
                 <tr class="table-primary">
                     <td colspan="3" class="text-end"><strong>GRAND TOTAL:</strong></td>
                     <td class="text-end" width="20%"><strong>Rp ${formatNumber(inv.total)}</strong></td>

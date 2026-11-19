@@ -3,6 +3,7 @@ session_start();
 require_once '../config.php';
 require_once '../finance_helper.php';
 require_once '../dp_helper.php';
+require_once '../invoice_helper.php';
 
 global $conn;
 
@@ -42,101 +43,6 @@ function spk_insert_discount_history(
             ($spkId, '$actionEsc', $requestedAmount, $approvedAmount, '$noteEsc', $actedBySql, '$roleEsc')";
 
     return mysqli_query($conn, $sql) !== false;
-}
-
-function spk_sync_active_invoice_totals(mysqli $conn, int $spkId): void
-{
-    if ($spkId <= 0) {
-        return;
-    }
-
-    $invRes = mysqli_query(
-        $conn,
-        "SELECT id FROM invoices
-         WHERE spk_id = $spkId
-           AND status_piutang <> 'Tidak_Aktif'
-         ORDER BY id DESC
-         LIMIT 1"
-    );
-    $inv = $invRes ? mysqli_fetch_assoc($invRes) : null;
-    if (!$inv) {
-        return;
-    }
-
-    $invoiceId = (int)$inv['id'];
-
-    // Use GENERATED subtotal column which respects custom_price
-    $qItems = "SELECT COALESCE(SUM(si.subtotal), 0) AS biaya_sparepart
-               FROM spk_items si
-               WHERE si.spk_id = $spkId";
-    
-    $itemsRes = mysqli_query($conn, $qItems);
-    $itemsRow = $itemsRes ? mysqli_fetch_assoc($itemsRes) : [];
-    $biayaSparepart = (float)($itemsRow['biaya_sparepart'] ?? 0);
-
-    $svcRes = mysqli_query($conn, "SELECT COALESCE(SUM(subtotal), 0) AS biaya_jasa FROM spk_services WHERE spk_id = $spkId");
-    $svcRow = $svcRes ? mysqli_fetch_assoc($svcRes) : [];
-    $biayaJasa = (float)($svcRow['biaya_jasa'] ?? 0);
-
-    $discountAmount = 0.0;
-    $discColRes = mysqli_query($conn, "SHOW COLUMNS FROM invoices LIKE 'discount_amount'");
-    $hasDiscountCol = $discColRes && mysqli_num_rows($discColRes) > 0;
-    if ($hasDiscountCol) {
-        $discRes = mysqli_query($conn, "SELECT COALESCE(discount_amount, 0) AS discount_amount FROM invoices WHERE id = $invoiceId LIMIT 1");
-        $discRow = $discRes ? mysqli_fetch_assoc($discRes) : [];
-        $discountAmount = max(0.0, (float)($discRow['discount_amount'] ?? 0));
-    }
-
-    $subtotal = $biayaSparepart + $biayaJasa;
-    $total = max(0.0, $subtotal - $discountAmount);
-
-    $approvalColRes = mysqli_query($conn, "SHOW COLUMNS FROM payments LIKE 'approval_status'");
-    $hasApprovalCol = $approvalColRes && mysqli_num_rows($approvalColRes) > 0;
-    $approvedCond = $hasApprovalCol ? " AND (approval_status = 'approved' OR approval_status IS NULL)" : '';
-    $paidRes = mysqli_query(
-        $conn,
-        "SELECT COALESCE(SUM(amount), 0) AS total_paid, MAX(tanggal) AS last_paid
-         FROM payments
-         WHERE invoice_id = $invoiceId$approvedCond"
-    );
-    $paidRow = $paidRes ? mysqli_fetch_assoc($paidRes) : [];
-    $totalPaid = (float)($paidRow['total_paid'] ?? 0);
-    $lastPaid = $paidRow['last_paid'] ?? null;
-
-    $status = 'Belum Bayar';
-    $paidAtSql = 'NULL';
-    if ($total > 0 && $totalPaid >= $total) {
-        $status = 'Lunas';
-        if (!empty($lastPaid)) {
-            $paidAtSql = "'" . mysqli_real_escape_string($conn, $lastPaid) . "'";
-        }
-    } elseif ($totalPaid > 0) {
-        $status = 'Sudah Dicicil';
-    }
-
-    if ($hasDiscountCol) {
-        mysqli_query(
-            $conn,
-            "UPDATE invoices
-             SET biaya_jasa = $biayaJasa,
-                 biaya_sparepart = $biayaSparepart,
-                 total = $total,
-                 status_piutang = '$status',
-                 paid_at = $paidAtSql
-             WHERE id = $invoiceId"
-        );
-    } else {
-        mysqli_query(
-            $conn,
-            "UPDATE invoices
-             SET biaya_jasa = $biayaJasa,
-                 biaya_sparepart = $biayaSparepart,
-                 total = $total,
-                 status_piutang = '$status',
-                 paid_at = $paidAtSql
-             WHERE id = $invoiceId"
-        );
-    }
 }
 
 // Support both legacy `stok` and new `current_stock` column names.
@@ -708,6 +614,9 @@ elseif ($action === 'review_discount') {
                 throw new Exception('Gagal menyimpan histori approval: ' . mysqli_error($conn));
             }
 
+            // Diskon yang baru di-ACC harus langsung masuk ke invoice aktif SPK ini (bila invoice sudah dibuat).
+            spk_sync_active_invoice_totals($conn, $id);
+
             mysqli_commit($conn);
             echo json_encode(['success' => true, 'message' => 'Diskon berhasil di-ACC dan tercatat di keuangan']);
             exit;
@@ -727,6 +636,9 @@ elseif ($action === 'review_discount') {
         if (!spk_insert_discount_history($conn, $id, 'reject', $requestedAmount, 0, null, $currentUserId, $currentUserRole)) {
             throw new Exception('Gagal menyimpan histori penolakan: ' . mysqli_error($conn));
         }
+
+        // Invoice aktif mengikuti status diskon SPK (ditolak = tidak ada diskon).
+        spk_sync_active_invoice_totals($conn, $id);
 
         mysqli_commit($conn);
         echo json_encode(['success' => true, 'message' => 'Pengajuan diskon ditolak']);

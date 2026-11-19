@@ -39,6 +39,7 @@
                                      currentPath.includes('/services/') ||
                                      currentPath.includes('/purchases/') ||
                                      currentPath.includes('/spk/') ||
+                                     currentPath.includes('/estimasi/') ||
                                      currentPath.includes('/warehouse_out/') ||
                                      currentPath.includes('/payments/') ||
                                      currentPath.includes('/invoices/') ||
@@ -79,6 +80,7 @@
                     'services/index.php': 'Harga Jasa',
                     'purchases/index.php': 'Purchases',
                     'spk/index.php': 'SPK',
+                    'estimasi/index.php': 'Estimasi',
                     'warehouse_out/index.php': 'Warehouse Out',
                     'payments/index.php': 'Payment',
                     'invoices/index.php': 'Invoices',
@@ -262,6 +264,7 @@
                         'services/index.php': 'fa-wrench',
                         'purchases/index.php': 'fa-shopping-cart',
                         'spk/index.php': 'fa-clipboard-list',
+                        'estimasi/index.php': 'fa-file-signature',
                         'warehouse_out/index.php': 'fa-dolly',
                         'payments/index.php': 'fa-wallet',
                         'invoices/index.php': 'fa-file-invoice',
@@ -528,6 +531,11 @@
                 <li class="nav-item">
                     <a class="nav-link" href="../spk/index.php">
                         <i class="fas fa-clipboard-list"></i> SPK
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="../estimasi/index.php">
+                        <i class="fas fa-file-signature"></i> Estimasi
                     </a>
                 </li>
                 <li class="nav-item">

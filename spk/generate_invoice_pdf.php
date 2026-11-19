@@ -85,7 +85,7 @@ $grand_total = $subtotal - $discount_amount;
 // DP (uang muka) yang sudah diterima untuk SPK ini
 dp_ensure_schema($conn);
 $dp_total = dp_total($conn, $spk_id);
-$sisa_pembayaran = max(0, $grand_total - $dp_total);
+$total_bayar = max(0, $grand_total - $dp_total);
 
 // Generate filename: namacust_nopol_mobil_tglsekarang
 $customer_name_clean = preg_replace('/[^a-zA-Z0-9]/', '_', $spk['customer_name']);
@@ -384,31 +384,21 @@ ob_start();
         <div class="total-section">
             <table>
                 <tr>
-                    <td><strong>Total Jasa Service:</strong></td>
-                    <td class="text-right">Rp <?php echo number_format($total_jasa, 0, ',', '.'); ?></td>
+                    <td><strong>Total:</strong></td>
+                    <td class="text-right">Rp <?php echo number_format($subtotal, 0, ',', '.'); ?></td>
                 </tr>
                 <tr>
-                    <td><strong>Total Sparepart:</strong></td>
-                    <td class="text-right">Rp <?php echo number_format($total_sparepart, 0, ',', '.'); ?></td>
+                    <td><strong>DP:</strong></td>
+                    <td class="text-right">Rp <?php echo number_format($dp_total, 0, ',', '.'); ?></td>
                 </tr>
                 <tr>
-                    <td><strong>Discount:</strong></td>
+                    <td><strong>Diskon:</strong></td>
                     <td class="text-right">Rp <?php echo number_format($discount_amount, 0, ',', '.'); ?></td>
                 </tr>
                 <tr class="grand-total">
-                    <td><strong>GRAND TOTAL:</strong></td>
-                    <td class="text-right"><strong>Rp <?php echo number_format($grand_total, 0, ',', '.'); ?></strong></td>
+                    <td><strong>Total Bayar:</strong></td>
+                    <td class="text-right"><strong>Rp <?php echo number_format($total_bayar, 0, ',', '.'); ?></strong></td>
                 </tr>
-                <?php if ($dp_total > 0): ?>
-                <tr>
-                    <td><strong>DP (Uang Muka):</strong></td>
-                    <td class="text-right">- Rp <?php echo number_format($dp_total, 0, ',', '.'); ?></td>
-                </tr>
-                <tr class="grand-total">
-                    <td><strong>SISA PEMBAYARAN:</strong></td>
-                    <td class="text-right"><strong>Rp <?php echo number_format($sisa_pembayaran, 0, ',', '.'); ?></strong></td>
-                </tr>
-                <?php endif; ?>
             </table>
         </div>
     </div>
