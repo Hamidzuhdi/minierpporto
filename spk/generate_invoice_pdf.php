@@ -391,9 +391,13 @@ ob_start();
                     <td><strong>DP:</strong></td>
                     <td class="text-right">Rp <?php echo number_format($dp_total, 0, ',', '.'); ?></td>
                 </tr>
+                <?php
+                    // Diskon dibuat lebih besar dan merah (bila ada) supaya mudah terlihat
+                    $diskon_style = $discount_amount > 0 ? ' style="color: #c00000; font-size: 13px; font-weight: bold;"' : '';
+                ?>
                 <tr>
-                    <td><strong>Diskon:</strong></td>
-                    <td class="text-right">Rp <?php echo number_format($discount_amount, 0, ',', '.'); ?></td>
+                    <td<?php echo $diskon_style; ?>><strong>Diskon:</strong></td>
+                    <td class="text-right"<?php echo $diskon_style; ?>>Rp <?php echo number_format($discount_amount, 0, ',', '.'); ?></td>
                 </tr>
                 <tr class="grand-total">
                     <td><strong>Total Bayar:</strong></td>
