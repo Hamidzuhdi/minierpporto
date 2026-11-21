@@ -270,7 +270,7 @@ elseif ($action === 'export_excel') {
     if (count($conditions) > 0) {
         $sql .= " WHERE " . implode(' AND ', $conditions);
     }
-    $sql .= " ORDER BY nama ASC";
+    $sql .= " ORDER BY (kategori = 'Fast Moving') DESC, nama ASC";
 
     $result = mysqli_query($conn, $sql);
 
