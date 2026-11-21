@@ -5,6 +5,14 @@ const SPAREPART_KATEGORI_FAST = 'Fast Moving';
 const SPAREPART_KATEGORI_SLOW = 'Slow Moving';
 const SPAREPART_KATEGORI_TYPE = "enum('Fast Moving','Slow Moving')";
 
+// Klausa ORDER BY standar daftar sparepart: Fast Moving di atas, Slow Moving di bawah,
+// lalu urut nama A-Z di dalam tiap kelompok. Dipakai halaman list dan export Excel agar urutannya sama.
+// Dibuat eksplisit (bukan ORDER BY kategori) supaya tidak bergantung pada urutan nilai ENUM.
+function sparepart_order_by_clause(): string
+{
+    return "ORDER BY (kategori = '" . SPAREPART_KATEGORI_FAST . "') DESC, nama ASC";
+}
+
 // Memastikan kolom spareparts.kategori ada dan bertipe ENUM('Fast Moving','Slow Moving') (default 'Slow Moving').
 // Aman dijalankan berulang (tidak melakukan apa pun bila sudah sesuai).
 //   - kolom belum ada            : ditambahkan, semua sparepart lama menjadi Slow Moving

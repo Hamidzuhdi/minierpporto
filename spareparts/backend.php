@@ -111,10 +111,10 @@ elseif ($action === 'read') {
         $sql .= " WHERE " . implode(' AND ', $conditions);
     }
     
-    $sql .= " ORDER BY nama ASC";
-    
+    $sql .= " " . sparepart_order_by_clause();
+
     $result = mysqli_query($conn, $sql);
-    
+
     $spareparts = [];
     while ($row = mysqli_fetch_assoc($result)) {
         $spareparts[] = $row;
@@ -270,7 +270,7 @@ elseif ($action === 'export_excel') {
     if (count($conditions) > 0) {
         $sql .= " WHERE " . implode(' AND ', $conditions);
     }
-    $sql .= " ORDER BY (kategori = 'Fast Moving') DESC, nama ASC";
+    $sql .= " " . sparepart_order_by_clause();
 
     $result = mysqli_query($conn, $sql);
 
